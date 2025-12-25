@@ -209,6 +209,60 @@ public static class PipelineTools
             Name = "pipeline.get_stats",
             Description = "Get summary statistics for the pipeline",
             InputSchema = new ToolInputSchema()
+        },
+
+        // =====================================================================
+        // Promoter Tools - For referral partners who use promo codes
+        // =====================================================================
+
+        new ToolDefinition
+        {
+            Name = "promoter.dashboard",
+            Description = "Get comprehensive dashboard for a promoter including performance metrics, pipeline breakdown, recommended actions, and commission tracking",
+            InputSchema = new ToolInputSchema
+            {
+                Properties = new Dictionary<string, ToolProperty>
+                {
+                    ["promoterId"] = new() { Type = "string", Description = "The promoter's unique ID" },
+                    ["promoterName"] = new() { Type = "string", Description = "The promoter's display name" },
+                    ["promoCode"] = new() { Type = "string", Description = "The promoter's promo code (defaults to promoterId)" },
+                    ["tier"] = new() { Type = "string", Description = "Promoter tier level", Enum = new List<string> { "Bronze", "Silver", "Gold", "Platinum", "Diamond" } },
+                    ["referenceDate"] = new() { Type = "string", Description = "Reference date (ISO format, defaults to today)" }
+                },
+                Required = new List<string> { "promoterId" }
+            }
+        },
+        new ToolDefinition
+        {
+            Name = "promoter.deals",
+            Description = "Get all deals referred by a promoter with status and health information",
+            InputSchema = new ToolInputSchema
+            {
+                Properties = new Dictionary<string, ToolProperty>
+                {
+                    ["promoterId"] = new() { Type = "string", Description = "The promoter's unique ID" },
+                    ["promoCode"] = new() { Type = "string", Description = "The promoter's promo code (defaults to promoterId)" },
+                    ["tier"] = new() { Type = "string", Description = "Promoter tier level for commission calculation", Enum = new List<string> { "Bronze", "Silver", "Gold", "Platinum", "Diamond" } },
+                    ["referenceDate"] = new() { Type = "string", Description = "Reference date (ISO format, defaults to today)" }
+                },
+                Required = new List<string> { "promoterId" }
+            }
+        },
+        new ToolDefinition
+        {
+            Name = "promoter.actions",
+            Description = "Get recommended actions for a promoter to help their referred deals progress through the pipeline",
+            InputSchema = new ToolInputSchema
+            {
+                Properties = new Dictionary<string, ToolProperty>
+                {
+                    ["promoterId"] = new() { Type = "string", Description = "The promoter's unique ID" },
+                    ["promoCode"] = new() { Type = "string", Description = "The promoter's promo code (defaults to promoterId)" },
+                    ["tier"] = new() { Type = "string", Description = "Promoter tier level for commission calculation", Enum = new List<string> { "Bronze", "Silver", "Gold", "Platinum", "Diamond" } },
+                    ["referenceDate"] = new() { Type = "string", Description = "Reference date (ISO format, defaults to today)" }
+                },
+                Required = new List<string> { "promoterId" }
+            }
         }
     };
 }

@@ -34,8 +34,9 @@ public class ZarwinServer
         // Use Excel as the primary data store (sheet-per-table design)
         var repository = new ExcelDealRepository(excelPath, lookups);
         var pipelineService = new PipelineService(repository, lookups, settings);
+        var promoterService = new PromoterService(repository, settings);
 
-        _toolHandler = new ToolHandler(pipelineService, repository, lookups, excelPath);
+        _toolHandler = new ToolHandler(pipelineService, promoterService, repository, lookups, excelPath);
 
         _jsonOptions = new JsonSerializerOptions
         {
@@ -100,6 +101,7 @@ public class ZarwinServer
                 "tools/call" => await HandleToolCall(request.Params),
                 "shutdown" => new { success = true },
                 _ when request.Method.StartsWith("pipeline.") => await _toolHandler.HandleAsync(request.Method, request.Params),
+                _ when request.Method.StartsWith("promoter.") => await _toolHandler.HandleAsync(request.Method, request.Params),
                 _ => throw new InvalidOperationException($"Unknown method: {request.Method}")
             };
         }

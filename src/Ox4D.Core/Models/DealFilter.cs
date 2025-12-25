@@ -16,6 +16,12 @@ public class DealFilter
     public int? NoContactDays { get; set; }
     public List<string>? Tags { get; set; }
 
+    // Promoter/Referral filters
+    public string? PromoterId { get; set; }
+    public string? PromoCode { get; set; }
+    public bool? HasPromoter { get; set; }
+    public bool? CommissionPending { get; set; }
+
     public bool Matches(Deal deal, DateTime referenceDate)
     {
         if (!string.IsNullOrWhiteSpace(SearchText))
@@ -76,6 +82,27 @@ public class DealFilter
         }
 
         if (Tags?.Any() == true && !Tags.All(t => deal.Tags.Contains(t, StringComparer.OrdinalIgnoreCase)))
+            return false;
+
+        // Promoter/Referral filters
+        if (!string.IsNullOrWhiteSpace(PromoterId) &&
+            !string.Equals(deal.PromoterId, PromoterId, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        if (!string.IsNullOrWhiteSpace(PromoCode) &&
+            !string.Equals(deal.PromoCode, PromoCode, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        if (HasPromoter == true && string.IsNullOrWhiteSpace(deal.PromoterId))
+            return false;
+
+        if (HasPromoter == false && !string.IsNullOrWhiteSpace(deal.PromoterId))
+            return false;
+
+        if (CommissionPending == true && (deal.CommissionPaid || !deal.PromoterCommission.HasValue))
+            return false;
+
+        if (CommissionPending == false && !deal.CommissionPaid && deal.PromoterCommission.HasValue)
             return false;
 
         return true;

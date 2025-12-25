@@ -69,5 +69,12 @@ public class Deal
     public string? Comments { get; set; }
     public List<string> Tags { get; set; } = new();
 
+    // Promoter/Referral Tracking
+    public string? PromoterId { get; set; }
+    public string? PromoCode { get; set; }
+    public decimal? PromoterCommission { get; set; }
+    public bool CommissionPaid { get; set; }
+    public DateTime? CommissionPaidDate { get; set; }
+
     public Deal Clone() => (Deal)MemberwiseClone();
 }

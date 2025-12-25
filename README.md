@@ -4,7 +4,7 @@
 
 **An AI-Ready Sales Pipeline Copilot with MCP Integration**
 
-[![.NET 9.0](https://img.shields.io/badge/.NET-9.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
+[![.NET 10.0](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![MCP Compatible](https://img.shields.io/badge/MCP-Compatible-blue)](https://modelcontextprotocol.io/)
 
@@ -48,6 +48,15 @@ The **Zarwin** server exposes all pipeline operations as MCP tools, enabling AI 
 - Create, update, and delete pipeline entries
 - Generate reports and forecasts
 - Save changes back to Excel
+
+### Promoter/Referral Partner Support
+
+Track deals referred by promoters using promo codes:
+
+- **Commission Tracking**: Automatic commission calculation based on tier (Bronze to Diamond)
+- **Promoter Dashboard**: Performance metrics, pipeline breakdown, and earnings projections
+- **Actionable Recommendations**: AI-powered suggestions for promoters to help move deals forward
+- **Deal Health Monitoring**: Identify stalled, at-risk, or critical deals needing attention
 
 ---
 
@@ -100,10 +109,10 @@ The **Zarwin** server exposes all pipeline operations as MCP tools, enabling AI 
 Ox4D/
 ├── src/
 │   ├── Ox4D.Core/           # Domain models, services, reports
-│   │   ├── Models/          # Deal, DealStage, DealFilter
+│   │   ├── Models/          # Deal, DealStage, DealFilter, Promoter
 │   │   │   ├── Config/      # LookupTables, PipelineSettings
-│   │   │   └── Reports/     # DailyBrief, HygieneReport, ForecastSnapshot
-│   │   └── Services/        # PipelineService, ReportService, DealNormalizer
+│   │   │   └── Reports/     # DailyBrief, HygieneReport, ForecastSnapshot, PromoterDashboard
+│   │   └── Services/        # PipelineService, ReportService, PromoterService
 │   │
 │   ├── Ox4D.Storage/        # Repository implementations
 │   │   ├── ExcelDealRepository.cs    # Excel with sheet-per-table design
@@ -135,7 +144,7 @@ Ox4D/
 
 ### Prerequisites
 
-- [.NET 9.0 SDK](https://dotnet.microsoft.com/download)
+- [.NET 10.0 SDK](https://dotnet.microsoft.com/download)
 
 ### Installation
 
@@ -199,6 +208,14 @@ The Zarwin server exposes these tools for AI assistants:
 | `pipeline.save` | Persist changes to Excel |
 | `pipeline.reload` | Reload data from Excel |
 
+#### Promoter Tools
+
+| Tool | Description |
+|------|-------------|
+| `promoter.dashboard` | Get comprehensive promoter dashboard with metrics, pipeline breakdown, and commission tracking |
+| `promoter.deals` | Get all deals referred by a promoter with status and health information |
+| `promoter.actions` | Get recommended actions for a promoter to help move their referred deals forward |
+
 ### Example Request
 
 ```json
@@ -230,6 +247,7 @@ The `Deal` class represents a sales opportunity with comprehensive tracking:
 | **Actions** | NextStep, NextStepDueDate, CloseDate |
 | **Service** | ServicePlan, LastServiceDate, NextServiceDueDate |
 | **Metadata** | Comments, Tags |
+| **Promoter** | PromoterId, PromoCode, PromoterCommission, CommissionPaid |
 
 ### Deal Stages
 
@@ -247,6 +265,18 @@ When deals are created or updated, the system automatically:
 - Derives `Region` using configurable postcode-to-region mappings
 - Generates `MapLink` as a Google Maps URL
 - Applies default probability based on stage
+
+### Promoter Tiers
+
+Promoters earn commissions based on their tier level:
+
+| Tier | Commission Rate | Min Referrals |
+|------|-----------------|---------------|
+| Bronze | 10% | 0 |
+| Silver | 12% | 10 |
+| Gold | 15% | 25 |
+| Platinum | 18% | 50 |
+| Diamond | 20% | 100 |
 
 ---
 
@@ -269,12 +299,16 @@ This design ensures that migrating to Supabase (or PostgreSQL) requires only imp
 ## Roadmap
 
 ### Phase 1: Foundation (Complete)
+
 - [x] Core domain model with comprehensive deal tracking
 - [x] Excel storage with sheet-per-table architecture
 - [x] Interactive console with Spectre.Console
 - [x] MCP server with full tool coverage
 - [x] Synthetic data generation for testing
 - [x] Daily Brief, Hygiene, and Forecast reports
+- [x] Promoter/referral partner support with commission tracking
+- [x] Promoter dashboard with actionable recommendations
+- [x] .NET 10.0 upgrade
 
 ### Phase 2: Cloud Migration
 - [ ] **Supabase Integration**: Implement `SupabaseDealRepository` for cloud-native storage
@@ -306,7 +340,7 @@ This design ensures that migrating to Supabase (or PostgreSQL) requires only imp
 
 | Component | Technology |
 |-----------|------------|
-| **Runtime** | .NET 9.0 |
+| **Runtime** | .NET 10.0 |
 | **Storage** | ClosedXML (Excel), Supabase (planned) |
 | **Console UI** | Spectre.Console |
 | **MCP Protocol** | JSON-RPC 2.0 over stdio |

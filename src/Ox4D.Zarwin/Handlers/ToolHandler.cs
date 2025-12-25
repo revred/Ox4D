@@ -16,22 +16,25 @@ using Ox4D.Storage;
 namespace Ox4D.Zarwin.Handlers;
 
 /// <summary>
-/// Handles MCP tool calls by dispatching to PipelineService.
+/// Handles MCP tool calls by dispatching to PipelineService and PromoterService.
 /// </summary>
 public class ToolHandler
 {
     private readonly PipelineService _pipelineService;
+    private readonly PromoterService _promoterService;
     private readonly IDealRepository _repository;
     private readonly LookupTables _lookups;
     private readonly string _excelPath;
 
     public ToolHandler(
         PipelineService pipelineService,
+        PromoterService promoterService,
         IDealRepository repository,
         LookupTables lookups,
         string excelPath)
     {
         _pipelineService = pipelineService;
+        _promoterService = promoterService;
         _repository = repository;
         _lookups = lookups;
         _excelPath = excelPath;
@@ -41,6 +44,7 @@ public class ToolHandler
     {
         return method switch
         {
+            // Pipeline operations
             "pipeline.list_deals" => await HandleListDeals(parameters),
             "pipeline.get_deal" => await HandleGetDeal(parameters),
             "pipeline.upsert_deal" => await HandleUpsertDeal(parameters),
@@ -53,6 +57,12 @@ public class ToolHandler
             "pipeline.get_stats" => await HandleGetStats(),
             "pipeline.save" => await HandleSave(),
             "pipeline.reload" => await HandleReload(),
+
+            // Promoter operations
+            "promoter.dashboard" => await HandlePromoterDashboard(parameters),
+            "promoter.deals" => await HandlePromoterDeals(parameters),
+            "promoter.actions" => await HandlePromoterActions(parameters),
+
             _ => throw new InvalidOperationException($"Unknown method: {method}")
         };
     }
@@ -70,6 +80,12 @@ public class ToolHandler
             filter.ProductLine = GetString(p, "productLine");
             filter.MinAmount = GetDecimal(p, "minAmount");
             filter.MaxAmount = GetDecimal(p, "maxAmount");
+
+            // Promoter filters
+            filter.PromoterId = GetString(p, "promoterId");
+            filter.PromoCode = GetString(p, "promoCode");
+            filter.HasPromoter = GetBool(p, "hasPromoter");
+            filter.CommissionPending = GetBool(p, "commissionPending");
 
             if (p.TryGetProperty("stages", out var stages) && stages.ValueKind == JsonValueKind.Array)
             {
@@ -118,7 +134,11 @@ public class ToolHandler
             CloseDate = GetDate(p, "closeDate"),
             ProductLine = GetString(p, "productLine"),
             LeadSource = GetString(p, "leadSource"),
-            Comments = GetString(p, "comments")
+            Comments = GetString(p, "comments"),
+            // Promoter fields
+            PromoterId = GetString(p, "promoterId"),
+            PromoCode = GetString(p, "promoCode"),
+            PromoterCommission = GetDecimal(p, "promoterCommission")
         };
 
         if (p.TryGetProperty("tags", out var tags) && tags.ValueKind == JsonValueKind.Array)
@@ -343,7 +363,13 @@ public class ToolHandler
         lastServiceDate = d.LastServiceDate,
         nextServiceDueDate = d.NextServiceDueDate,
         comments = d.Comments,
-        tags = d.Tags
+        tags = d.Tags,
+        // Promoter fields
+        promoterId = d.PromoterId,
+        promoCode = d.PromoCode,
+        promoterCommission = d.PromoterCommission,
+        commissionPaid = d.CommissionPaid,
+        commissionPaidDate = d.CommissionPaidDate
     };
 
     private static object ActionToDto(DealAction a) => new
@@ -396,4 +422,144 @@ public class ToolHandler
         var str = GetString(p, name);
         return DealNormalizer.ParseDate(str);
     }
+
+    private static bool? GetBool(JsonElement? p, string name)
+    {
+        if (!p.HasValue) return null;
+        if (!p.Value.TryGetProperty(name, out var prop)) return null;
+        return prop.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            _ => null
+        };
+    }
+
+    // =========================================================================
+    // Promoter Handlers
+    // =========================================================================
+
+    private async Task<object> HandlePromoterDashboard(JsonElement? parameters)
+    {
+        var promoterId = GetRequiredString(parameters, "promoterId");
+        var promoterName = GetString(parameters, "promoterName") ?? "Promoter";
+        var promoCode = GetString(parameters, "promoCode") ?? promoterId;
+        var tierStr = GetString(parameters, "tier");
+        var tier = PromoterTierExtensions.ParseTier(tierStr);
+        var refDate = GetDate(parameters, "referenceDate") ?? DateTime.Today;
+
+        var dashboard = await _promoterService.GetPromoterDashboardAsync(
+            promoterId, promoterName, promoCode, tier, refDate);
+
+        return new
+        {
+            generatedAt = dashboard.GeneratedAt,
+            promoterId = dashboard.PromoterId,
+            promoterName = dashboard.PromoterName,
+            promoCode = dashboard.PromoCode,
+            tier = dashboard.Tier.ToDisplayString(),
+            commissionRate = dashboard.CommissionRate,
+            summary = new
+            {
+                totalReferrals = dashboard.Summary.TotalReferrals,
+                activeDeals = dashboard.Summary.ActiveDeals,
+                closedWon = dashboard.Summary.ClosedWon,
+                closedLost = dashboard.Summary.ClosedLost,
+                conversionRate = dashboard.Summary.ConversionRate,
+                totalPipelineValue = dashboard.Summary.TotalPipelineValue,
+                weightedPipelineValue = dashboard.Summary.WeightedPipelineValue,
+                totalWonValue = dashboard.Summary.TotalWonValue,
+                averageDealsValue = dashboard.Summary.AverageDealsValue,
+                dealsClosingThisMonth = dashboard.Summary.DealsClosingThisMonth,
+                valueClosingThisMonth = dashboard.Summary.ValueClosingThisMonth
+            },
+            byStage = dashboard.ByStage.Select(s => new
+            {
+                stage = s.Stage.ToDisplayString(),
+                dealCount = s.DealCount,
+                totalValue = s.TotalValue,
+                weightedValue = s.WeightedValue,
+                potentialCommission = s.PotentialCommission,
+                averageAgeDays = s.AverageAgeDays
+            }),
+            recommendedActions = dashboard.RecommendedActions.Select(PromoterActionToDto),
+            dealsNeedingAttention = dashboard.DealsNeedingAttention.Select(PromoterDealStatusToDto),
+            commissionSummary = new
+            {
+                totalEarned = dashboard.CommissionSummary.TotalEarned,
+                totalPaid = dashboard.CommissionSummary.TotalPaid,
+                pendingPayment = dashboard.CommissionSummary.PendingPayment,
+                projectedFromPipeline = dashboard.CommissionSummary.ProjectedFromPipeline,
+                projectedThisMonth = dashboard.CommissionSummary.ProjectedThisMonth,
+                projectedThisQuarter = dashboard.CommissionSummary.ProjectedThisQuarter
+            },
+            recentDeals = dashboard.RecentDeals.Select(PromoterDealStatusToDto)
+        };
+    }
+
+    private async Task<object> HandlePromoterDeals(JsonElement? parameters)
+    {
+        var promoterId = GetRequiredString(parameters, "promoterId");
+        var promoCode = GetString(parameters, "promoCode") ?? promoterId;
+        var tierStr = GetString(parameters, "tier");
+        var tier = PromoterTierExtensions.ParseTier(tierStr);
+        var commissionRate = tier.GetCommissionRate();
+        var refDate = GetDate(parameters, "referenceDate") ?? DateTime.Today;
+
+        var deals = await _promoterService.GetPromoterDealsAsync(
+            promoterId, promoCode, commissionRate, refDate);
+
+        return new { deals = deals.Select(PromoterDealStatusToDto) };
+    }
+
+    private async Task<object> HandlePromoterActions(JsonElement? parameters)
+    {
+        var promoterId = GetRequiredString(parameters, "promoterId");
+        var promoCode = GetString(parameters, "promoCode") ?? promoterId;
+        var tierStr = GetString(parameters, "tier");
+        var tier = PromoterTierExtensions.ParseTier(tierStr);
+        var commissionRate = tier.GetCommissionRate();
+        var refDate = GetDate(parameters, "referenceDate") ?? DateTime.Today;
+
+        var actions = await _promoterService.GetRecommendedActionsAsync(
+            promoterId, promoCode, commissionRate, refDate);
+
+        return new { actions = actions.Select(PromoterActionToDto) };
+    }
+
+    private static object PromoterActionToDto(PromoterAction a) => new
+    {
+        dealId = a.DealId,
+        dealName = a.DealName,
+        accountName = a.AccountName,
+        owner = a.Owner,
+        stage = a.Stage.ToDisplayString(),
+        amount = a.Amount,
+        potentialCommission = a.PotentialCommission,
+        actionType = a.ActionType.ToDisplayString(),
+        priority = a.Priority.ToDisplayString(),
+        recommendation = a.Recommendation,
+        reason = a.Reason,
+        dueDate = a.DueDate,
+        daysStuck = a.DaysStuck
+    };
+
+    private static object PromoterDealStatusToDto(PromoterDealStatus d) => new
+    {
+        dealId = d.DealId,
+        dealName = d.DealName,
+        accountName = d.AccountName,
+        stage = d.Stage.ToDisplayString(),
+        amount = d.Amount,
+        potentialCommission = d.PotentialCommission,
+        owner = d.Owner,
+        closeDate = d.CloseDate,
+        lastContactedDate = d.LastContactedDate,
+        nextStep = d.NextStep,
+        nextStepDueDate = d.NextStepDueDate,
+        daysInPipeline = d.DaysInPipeline,
+        daysInCurrentStage = d.DaysInCurrentStage,
+        healthStatus = d.HealthStatus.ToDisplayString(),
+        statusReason = d.StatusReason
+    };
 }

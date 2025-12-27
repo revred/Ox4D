@@ -22,7 +22,7 @@ This repo is a **Sales Manager Copilot** that operates on an **Excel-based sales
 │            └───────────┬───────────┘                               │
 │                        │                                            │
 │            ┌───────────▼───────────┐                               │
-│            │    Ox4D.Storage       │                               │
+│            │    Ox4D.Store         │                               │
 │            │  (IDealRepository)    │                               │
 │            └───────────┬───────────┘                               │
 │                        │                                            │
@@ -32,6 +32,11 @@ This repo is a **Sales Manager Copilot** that operates on an **Excel-based sales
 │   │ Excel │    │   In-Memory   │   │Supabase │                    │
 │   │(.xlsx)│    │   (Testing)   │   │(Future) │                    │
 │   └───────┘    └───────────────┘   └─────────┘                    │
+│                                                                      │
+│   ┌─────────────────────────────────────────────────────────────┐   │
+│   │                      Ox4D.Mutate                             │   │
+│   │  (Bogus-powered synthetic data generation)                   │   │
+│   └─────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -44,13 +49,12 @@ This repo is a **Sales Manager Copilot** that operates on an **Excel-based sales
 Ox4D.sln
 src/
   Ox4D.Core/           # Domain models, services, reports (business logic)
-  Ox4D.Storage/        # Repository implementations (Excel, InMemory)
-  Ox4D.Console/        # Interactive menu-driven terminal UI (Spectre.Console)
+  Ox4D.Store/          # Repository implementations (Excel, InMemory)
+  Ox4D.Console/        # Unified gateway: interactive UI + full demo mode
   Ox4D.Zarwin/         # MCP server for LLM tool integration (stdio JSON-RPC)
+  Ox4D.Mutate/         # Bogus-powered synthetic data generation
 tests/
   Ox4D.Tests/          # Unit tests (xUnit + FluentAssertions)
-tools/
-  Demo/                # Non-interactive demo showcasing all features
 data/
   SalesPipelineV1.0.xlsx   # Primary data storage (Excel workbook)
 ```
@@ -59,10 +63,11 @@ data/
 
 | Project | Purpose |
 |---------|---------|
-| **Ox4D.Core** | Domain entities (Deal, DealStage), business logic (normalization, reports), service interfaces (IDealRepository). Zero dependencies on storage or UI. |
-| **Ox4D.Storage** | Storage implementations. ExcelDealRepository uses sheet-per-table design for future Supabase migration. InMemoryDealRepository for testing. |
-| **Ox4D.Console** | Interactive copilot for sales managers. Rich terminal UI with Spectre.Console. Imports/exports Excel, generates reports, manages deals. |
-| **Ox4D.Zarwin** | MCP (Model Context Protocol) server. Exposes pipeline tools via JSON-RPC over stdio. Allows LLMs like Claude to operate on pipeline data. |
+| **Ox4D.Core** | Domain entities (Deal, DealStage, Promoter), business logic (normalization, reports), service interfaces (IDealRepository, ISyntheticDataGenerator). Zero dependencies on storage or UI. |
+| **Ox4D.Store** | Storage implementations. ExcelDealRepository uses sheet-per-table design for future Supabase migration. InMemoryDealRepository for testing. |
+| **Ox4D.Console** | **Unified gateway** for all Ox4D operations. Rich terminal UI with Spectre.Console. Includes interactive menu (CRUD, reports, data management) plus a full non-interactive demo mode. |
+| **Ox4D.Zarwin** | MCP (Model Context Protocol) server. Exposes pipeline and promoter tools via JSON-RPC over stdio. Allows LLMs like Claude to operate on pipeline data. |
+| **Ox4D.Mutate** | Investor-grade synthetic data generation using Bogus. Produces realistic UK data (addresses, phone numbers, company names). |
 | **Ox4D.Tests** | Unit tests for normalization, reports, and synthetic data generation. |
 
 ---
@@ -75,7 +80,7 @@ The Excel workbook uses a **sheet-per-table design** that directly maps to futur
 
 | Sheet | Purpose | Future Supabase Table |
 |-------|---------|----------------------|
-| **Deals** | Main pipeline deals | `deals` |
+| **Deals** | Main pipeline deals (includes promoter fields) | `deals` |
 | **Lookups** | Postcode→Region, Stage→Probability | `postcode_regions`, `stage_probabilities` |
 | **Metadata** | Version info, timestamps | `metadata` |
 
@@ -84,9 +89,6 @@ The Excel workbook uses a **sheet-per-table design** that directly maps to futur
 - Column headers = column names
 - Rows = records
 - Makes Supabase migration straightforward: swap `ExcelDealRepository` for `SupabaseDealRepository`
-
-### No CSV Files
-CSV storage was removed in V1.1. All data persists in Excel with the sheet-per-table structure.
 
 ---
 
@@ -99,6 +101,7 @@ CSV storage was removed in V1.1. All data persists in Excel with the sheet-per-t
 | `System.Text.Json` | JSON serialization for MCP |
 | `FluentAssertions` | Test assertions |
 | `xUnit` | Unit testing |
+| `Bogus` | Realistic synthetic data generation |
 
 ---
 
@@ -117,12 +120,24 @@ Ownership:       Owner, CreatedDate, LastContactedDate
 Actions:         NextStep, NextStepDueDate, CloseDate
 Service:         ServicePlan, LastServiceDate, NextServiceDueDate
 Metadata:        Comments, Tags
+Promoter:        PromoterId, PromoCode, PromoterCommission, CommissionPaid, CommissionPaidDate
 ```
 
 ### DealStage Enum
 ```
 Lead → Qualified → Discovery → Proposal → Negotiation → Closed Won / Closed Lost / On Hold
 ```
+
+### Promoter Model
+Referral partners who earn commissions on deals:
+
+| Tier | Commission Rate | Min Referrals |
+|------|-----------------|---------------|
+| Bronze | 10% | 0 |
+| Silver | 12% | 10 |
+| Gold | 15% | 25 |
+| Platinum | 18% | 50 |
+| Diamond | 20% | 100 |
 
 ### Normalization Rules
 - Missing `DealId` → auto-generate (D-XXXXXXXX)
@@ -155,11 +170,26 @@ Answers: "What does my pipeline look like?"
 - Weighted pipeline value
 - Breakdown by: Stage, Owner, Close Month, Region, Product
 
+### Promoter Dashboard
+Answers: "How are my referral partners performing?"
+- Referral metrics (total, active, won, lost)
+- Pipeline breakdown by stage
+- Commission tracking (earned, paid, pending)
+- Actionable recommendations for promoters
+
 ---
 
-## 6) Console Menu (Ox4D.Console)
+## 6) Console Application (Ox4D.Console)
 
-Interactive terminal menu:
+**Ox4D.Console** is the **unified gateway** for all pipeline operations. It provides both interactive menu access and a full non-interactive demo mode.
+
+### Usage
+```bash
+# Run the unified console application
+dotnet run --project src/Ox4D.Console
+```
+
+### Menu Options
 1. Load Excel workbook
 2. Save changes to Excel
 3. Generate synthetic demo data
@@ -167,11 +197,28 @@ Interactive terminal menu:
 5. View Hygiene Report
 6. View Forecast Snapshot
 7. View Pipeline Statistics
-8. Search deals
-9. View deal details
-10. Create new deal
-11. Update existing deal
-12. Delete deal
+8. Search / Deal Drilldown
+9. Update Deal
+10. Add New Deal
+11. Delete Deal
+12. List All Deals
+13. **Run Full Demo** (Non-Interactive) — showcases all features
+0. Exit
+
+### Full Demo Mode (Option 13)
+The demo mode runs through all pipeline features automatically:
+- Generates 100 synthetic deals (seed=42)
+- Displays pipeline statistics
+- Shows daily brief with overdue items
+- Runs hygiene report with health score
+- Displays forecast snapshot (by stage, owner, month)
+- Shows sample deal details
+- Saves everything to Excel
+
+This mode is ideal for:
+- **Demonstrations** to stakeholders
+- **Verification** of all system capabilities
+- **Training** new users on available features
 
 ---
 
@@ -179,7 +226,7 @@ Interactive terminal menu:
 
 Zarwin exposes pipeline operations as MCP tools via JSON-RPC over stdio.
 
-### Available Tools
+### Pipeline Tools
 
 | Tool | Description |
 |------|-------------|
@@ -195,6 +242,14 @@ Zarwin exposes pipeline operations as MCP tools via JSON-RPC over stdio.
 | `pipeline.get_stats` | Get pipeline statistics |
 | `pipeline.save` | Save changes to Excel |
 | `pipeline.reload` | Reload data from Excel |
+
+### Promoter Tools
+
+| Tool | Description |
+|------|-------------|
+| `promoter.dashboard` | Get comprehensive promoter dashboard with metrics |
+| `promoter.deals` | Get all deals referred by a promoter |
+| `promoter.actions` | Get recommended actions for a promoter |
 
 ### Usage
 ```bash
@@ -214,26 +269,44 @@ JSON-RPC 2.0 over stdio. Each request is a single line of JSON.
 
 ---
 
-## 8) Synthetic Data Generator
+## 8) Synthetic Data Generation
 
-Deterministic generation with configurable seed:
+Two implementations available via `ISyntheticDataGenerator` interface:
+
+### Simple Generator (Ox4D.Core)
+- Basic Random-based generation
+- Suitable for quick testing
+- No external dependencies
+
+### Bogus Generator (Ox4D.Mutate)
+- Uses Bogus library for realistic UK data
+- Proper UK postcode formats with region mapping
+- Authentic British company and person names
+- Proper UK phone number formats (+44/0xxx)
+- Promoter/referral data with commission tracking
+- Investor-grade demo datasets
+
+### Common Features
+- Deterministic output with configurable seed
 - Distribution: ~45% early stage, ~35% mid stage, ~20% closed
-- Injects hygiene issues for testing:
+- Intentional hygiene issues for testing:
   - ~10% missing NextStepDueDate
   - ~8% missing AmountGBP
   - ~12% missing LastContactedDate
-- Realistic UK postcodes, company names, owner names
 
 ---
 
-## 9) Definition of Done (V1.1)
+## 9) Definition of Done (V1.2)
 
 - [x] Excel-only storage with sheet-per-table design
 - [x] Console app with full CRUD + reports
 - [x] MCP server with all pipeline tools
-- [x] Synthetic data generation
+- [x] Promoter/referral partner support with commission tracking
+- [x] Promoter MCP tools (dashboard, deals, actions)
+- [x] Bogus-powered synthetic data generation (Ox4D.Mutate)
 - [x] Unit tests for core logic
 - [x] Project documentation
+- [x] .NET 10.0 upgrade
 
 ---
 
@@ -242,7 +315,8 @@ Deterministic generation with configurable seed:
 When migrating to Supabase:
 
 1. Create tables matching sheet structure:
-   - `deals` table with all Deal columns
+   - `deals` table with all Deal columns (including promoter fields)
+   - `promoters` table for promoter profiles
    - `lookups` table for configuration
 
 2. Implement `SupabaseDealRepository : IDealRepository`
@@ -266,3 +340,4 @@ When migrating to Supabase:
 - Treat Lookups as user-editable configuration
 - All business logic in Ox4D.Core (not in storage or UI)
 - Maintain repository abstraction for storage swap
+- Use ISyntheticDataGenerator interface for data generation flexibility

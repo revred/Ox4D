@@ -1,7 +1,7 @@
 using Ox4D.Core.Models;
 using Ox4D.Core.Services;
 
-namespace Ox4D.Storage;
+namespace Ox4D.Store;
 
 public class InMemoryDealRepository : IDealRepository
 {

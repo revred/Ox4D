@@ -18,7 +18,7 @@
 using Ox4D.Console;
 using Ox4D.Core.Models.Config;
 using Ox4D.Core.Services;
-using Ox4D.Storage;
+using Ox4D.Store;
 using Spectre.Console;
 
 var dataDir = Path.Combine(Directory.GetCurrentDirectory(), "data");

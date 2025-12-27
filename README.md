@@ -80,7 +80,7 @@ Track deals referred by promoters using promo codes:
 │            └───────────┬───────────┘                                │
 │                        │                                             │
 │            ┌───────────▼───────────┐                                │
-│            │    Ox4D.Storage       │                                │
+│            │     Ox4D.Store        │                                │
 │            │   IDealRepository     │                                │
 │            └───────────┬───────────┘                                │
 │                        │                                             │
@@ -90,6 +90,11 @@ Track deals referred by promoters using promo codes:
 │   │ Excel │    │   In-Memory   │   │Supabase │                      │
 │   │(.xlsx)│    │   (Testing)   │   │(Planned)│                      │
 │   └───────┘    └───────────────┘   └─────────┘                      │
+│                                                                      │
+│   ┌─────────────────────────────────────────────────────────────┐   │
+│   │                      Ox4D.Mutate                             │   │
+│   │  (Bogus-powered synthetic data generation)                   │   │
+│   └─────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -114,17 +119,20 @@ Ox4D/
 │   │   │   └── Reports/     # DailyBrief, HygieneReport, ForecastSnapshot, PromoterDashboard
 │   │   └── Services/        # PipelineService, ReportService, PromoterService
 │   │
-│   ├── Ox4D.Storage/        # Repository implementations
+│   ├── Ox4D.Store/          # Repository implementations
 │   │   ├── ExcelDealRepository.cs    # Excel with sheet-per-table design
 │   │   └── InMemoryDealRepository.cs # For testing
 │   │
 │   ├── Ox4D.Console/        # Interactive terminal UI (Spectre.Console)
 │   │   └── CopilotMenu.cs   # Menu-driven interface
 │   │
-│   └── Ox4D.Zarwin/         # MCP server for AI integration
-│       ├── ZarwinServer.cs  # JSON-RPC message loop
-│       ├── Handlers/        # Tool implementations
-│       └── Protocol/        # JSON-RPC types and tool definitions
+│   ├── Ox4D.Zarwin/         # MCP server for AI integration
+│   │   ├── ZarwinServer.cs  # JSON-RPC message loop
+│   │   ├── Handlers/        # Tool implementations
+│   │   └── Protocol/        # JSON-RPC types and tool definitions
+│   │
+│   └── Ox4D.Mutate/         # Bogus-powered synthetic data generation
+│       └── SyntheticDataGenerator.cs  # Realistic UK data generation
 │
 ├── tests/
 │   └── Ox4D.Tests/          # xUnit + FluentAssertions
@@ -309,6 +317,7 @@ This design ensures that migrating to Supabase (or PostgreSQL) requires only imp
 - [x] Promoter/referral partner support with commission tracking
 - [x] Promoter dashboard with actionable recommendations
 - [x] .NET 10.0 upgrade
+- [x] Bogus-powered realistic UK data generation (Ox4D.Mutate)
 
 ### Phase 2: Cloud Migration
 - [ ] **Supabase Integration**: Implement `SupabaseDealRepository` for cloud-native storage
@@ -346,6 +355,7 @@ This design ensures that migrating to Supabase (or PostgreSQL) requires only imp
 | **MCP Protocol** | JSON-RPC 2.0 over stdio |
 | **Testing** | xUnit, FluentAssertions |
 | **Serialization** | System.Text.Json |
+| **Synthetic Data** | Bogus (realistic UK data generation) |
 
 ---
 

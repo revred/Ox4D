@@ -8,18 +8,19 @@ public class PipelineService
     private readonly IDealRepository _repository;
     private readonly DealNormalizer _normalizer;
     private readonly ReportService _reportService;
-    private readonly SyntheticDataGenerator _generator;
+    private readonly ISyntheticDataGenerator _generator;
     private readonly PipelineSettings _settings;
 
     public PipelineService(
         IDealRepository repository,
         LookupTables lookups,
-        PipelineSettings settings)
+        PipelineSettings settings,
+        ISyntheticDataGenerator? generator = null)
     {
         _repository = repository;
         _normalizer = new DealNormalizer(lookups);
         _reportService = new ReportService(repository, settings);
-        _generator = new SyntheticDataGenerator(lookups, settings);
+        _generator = generator ?? new SyntheticDataGenerator(lookups, settings);
         _settings = settings;
     }
 

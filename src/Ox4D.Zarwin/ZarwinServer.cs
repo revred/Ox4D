@@ -10,7 +10,7 @@ using Ox4D.Core.Models.Config;
 using Ox4D.Core.Services;
 using Ox4D.Zarwin.Handlers;
 using Ox4D.Zarwin.Protocol;
-using Ox4D.Storage;
+using Ox4D.Store;
 
 namespace Ox4D.Zarwin;
 

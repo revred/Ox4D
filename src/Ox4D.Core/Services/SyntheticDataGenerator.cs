@@ -3,7 +3,12 @@ using Ox4D.Core.Models.Config;
 
 namespace Ox4D.Core.Services;
 
-public class SyntheticDataGenerator
+/// <summary>
+/// Simple synthetic data generator using basic Random.
+/// For more realistic UK data with proper addresses, phone numbers, and company names,
+/// use the Bogus-powered generator from Ox4D.Mutate.
+/// </summary>
+public class SyntheticDataGenerator : ISyntheticDataGenerator
 {
     private readonly LookupTables _lookups;
     private readonly PipelineSettings _settings;

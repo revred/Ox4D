@@ -34,4 +34,13 @@ public class PipelineSettings
         "Premium",
         "Enterprise"
     };
+
+    public List<string> Owners { get; set; } = new()
+    {
+        "James Wilson",
+        "Sarah Chen",
+        "Michael Brown",
+        "Emma Taylor",
+        "David Lee"
+    };
 }

@@ -3,24 +3,30 @@
 // =============================================================================
 // Purpose: Provides a rich terminal UI using Spectre.Console for sales managers
 //          to interact with their pipeline data, generate reports, and maintain
-//          data quality.
+//          data quality. This is the unified gateway for all Ox4D operations.
 //
 // Menu Options:
-// 1. Load/Save Excel workbook
-// 2. Generate synthetic demo data
-// 3. Daily Brief - action items, overdue tasks, at-risk deals
-// 4. Hygiene Report - data quality issues
-// 5. Forecast Snapshot - pipeline breakdown by various dimensions
-// 6. Statistics - summary metrics
-// 7. Search and drilldown
-// 8. CRUD operations on deals
+//  1. Load Excel workbook
+//  2. Save to Excel
+//  3. Generate synthetic demo data
+//  4. Daily Brief - action items, overdue tasks, at-risk deals
+//  5. Hygiene Report - data quality issues
+//  6. Forecast Snapshot - pipeline breakdown by various dimensions
+//  7. Pipeline Statistics - summary metrics
+//  8. Search / Deal Drilldown
+//  9. Update Deal
+// 10. Add New Deal
+// 11. Delete Deal
+// 12. List All Deals
+// 13. Run Full Demo - non-interactive showcase of all features
+//  0. Exit
 // =============================================================================
 
 using Ox4D.Core.Models;
 using Ox4D.Core.Models.Config;
 using Ox4D.Core.Models.Reports;
 using Ox4D.Core.Services;
-using Ox4D.Storage;
+using Ox4D.Store;
 using Spectre.Console;
 
 namespace Ox4D.Console;
@@ -69,6 +75,7 @@ public class CopilotMenu
                         "10. Add New Deal",
                         "11. Delete Deal",
                         "12. List All Deals",
+                        "13. Run Full Demo (Non-Interactive)",
                         "0. Exit"
                     }));
 
@@ -93,6 +100,7 @@ public class CopilotMenu
                         if (choice.StartsWith("10")) await AddNewDealAsync();
                         else if (choice.StartsWith("11")) await DeleteDealAsync();
                         else if (choice.StartsWith("12")) await ListAllDealsAsync();
+                        else if (choice.StartsWith("13")) await RunFullDemoAsync();
                         else if (choice.StartsWith("0.")) return;
                         break;
                 }
@@ -695,4 +703,168 @@ public class CopilotMenu
 
     private static string Truncate(string text, int maxLength) =>
         text.Length > maxLength ? text[..(maxLength - 3)] + "..." : text;
+
+    private async Task RunFullDemoAsync()
+    {
+        AnsiConsole.Write(new Rule("[blue]Ox4D Sales Pipeline Manager - Full Demo[/]").RuleStyle("blue"));
+        AnsiConsole.WriteLine();
+
+        // 1. Generate Synthetic Data
+        AnsiConsole.MarkupLine("[bold yellow]>>> STEP 1: GENERATING 100 SYNTHETIC DEALS (seed=42)[/]");
+        var existingDeals = await _repository.GetAllAsync();
+        foreach (var d in existingDeals)
+            await _repository.DeleteAsync(d.DealId);
+
+        var count = await _pipelineService.GenerateSyntheticDataAsync(100, seed: 42);
+        AnsiConsole.MarkupLine($"    Generated [green]{count}[/] deals\n");
+
+        // 2. Pipeline Statistics
+        AnsiConsole.MarkupLine("[bold yellow]>>> STEP 2: PIPELINE STATISTICS[/]");
+        var stats = await _pipelineService.GetStatsAsync();
+        var statsTable = new Table().Border(TableBorder.Simple);
+        statsTable.AddColumn("Metric");
+        statsTable.AddColumn(new TableColumn("Value").RightAligned());
+        statsTable.AddRow("Total Deals", stats.TotalDeals.ToString());
+        statsTable.AddRow("Open Deals", stats.OpenDeals.ToString());
+        statsTable.AddRow("Closed Won", stats.ClosedWonDeals.ToString());
+        statsTable.AddRow("Closed Lost", stats.ClosedLostDeals.ToString());
+        statsTable.AddRow("Total Pipeline", $"£{stats.TotalPipeline:N0}");
+        statsTable.AddRow("Weighted Pipeline", $"£{stats.WeightedPipeline:N0}");
+        statsTable.AddRow("Closed Won Value", $"£{stats.ClosedWonValue:N0}");
+        statsTable.AddRow("Avg Deal Value", $"£{stats.AverageDealsValue:N0}");
+        statsTable.AddRow("Sales Reps", string.Join(", ", stats.Owners));
+        statsTable.AddRow("Regions", string.Join(", ", stats.Regions.Take(5)) + "...");
+        AnsiConsole.Write(statsTable);
+        AnsiConsole.WriteLine();
+
+        // 3. Daily Brief
+        AnsiConsole.MarkupLine("[bold yellow]>>> STEP 3: DAILY BRIEF[/]");
+        var brief = await _pipelineService.GetDailyBriefAsync();
+        var briefTable = new Table().Border(TableBorder.Simple);
+        briefTable.AddColumn("Metric");
+        briefTable.AddColumn(new TableColumn("Value").RightAligned());
+        briefTable.AddRow("Reference Date", brief.ReferenceDate.ToString("dd MMM yyyy"));
+        briefTable.AddRow("Due Today", $"{brief.DueToday.Count} deals");
+        briefTable.AddRow("Overdue", $"[red]{brief.Overdue.Count} deals[/]");
+        briefTable.AddRow("No Contact (10d+)", $"[orange1]{brief.NoContactDeals.Count} deals[/]");
+        briefTable.AddRow("High Value @ Risk", $"[red]{brief.HighValueAtRisk.Count} deals (£{brief.TotalAtRiskValue:N0})[/]");
+        AnsiConsole.Write(briefTable);
+
+        if (brief.Overdue.Any())
+        {
+            AnsiConsole.MarkupLine("\n    [bold]Top 5 Overdue:[/]");
+            var overdueTable = new Table().Border(TableBorder.Rounded);
+            overdueTable.AddColumn("Deal");
+            overdueTable.AddColumn(new TableColumn("Amount").RightAligned());
+            overdueTable.AddColumn("Days Overdue");
+            foreach (var deal in brief.Overdue.Take(5))
+            {
+                overdueTable.AddRow(
+                    Truncate(deal.DealName, 30),
+                    $"£{deal.Amount ?? 0:N0}",
+                    $"[red]{deal.DaysOverdue}d[/]");
+            }
+            AnsiConsole.Write(overdueTable);
+        }
+        AnsiConsole.WriteLine();
+
+        // 4. Hygiene Report
+        AnsiConsole.MarkupLine("[bold yellow]>>> STEP 4: HYGIENE REPORT[/]");
+        var hygiene = await _pipelineService.GetHygieneReportAsync();
+        var healthColor = hygiene.HealthScore >= 80 ? "green" : hygiene.HealthScore >= 60 ? "yellow" : "red";
+        AnsiConsole.MarkupLine($"    Health Score:     [{healthColor}]{hygiene.HealthScore}%[/]");
+        AnsiConsole.MarkupLine($"    Deals with Issues:[red]{hygiene.DealsWithIssues}[/] / {hygiene.TotalDeals}");
+        AnsiConsole.MarkupLine("    [bold]Issues by Type:[/]");
+        foreach (var (type, cnt) in hygiene.IssuesByType.OrderByDescending(x => x.Value).Take(5))
+        {
+            AnsiConsole.MarkupLine($"      - {type.ToDisplayString(),-30}: [yellow]{cnt}[/]");
+        }
+        AnsiConsole.WriteLine();
+
+        // 5. Forecast Snapshot
+        AnsiConsole.MarkupLine("[bold yellow]>>> STEP 5: FORECAST SNAPSHOT[/]");
+        var forecast = await _pipelineService.GetForecastSnapshotAsync();
+        AnsiConsole.MarkupLine($"    Total Pipeline:   [green]£{forecast.TotalPipeline:N0}[/]");
+        AnsiConsole.MarkupLine($"    Weighted Pipeline:[green]£{forecast.WeightedPipeline:N0}[/]");
+        AnsiConsole.MarkupLine($"    Open Deals:       {forecast.OpenDeals}");
+
+        AnsiConsole.MarkupLine("\n    [bold]By Stage:[/]");
+        var stageTable = new Table().Border(TableBorder.Simple);
+        stageTable.AddColumn("Stage");
+        stageTable.AddColumn(new TableColumn("Deals").RightAligned());
+        stageTable.AddColumn(new TableColumn("Total").RightAligned());
+        stageTable.AddColumn(new TableColumn("%").RightAligned());
+        foreach (var stage in forecast.ByStage)
+        {
+            stageTable.AddRow(
+                stage.Stage.ToDisplayString(),
+                stage.DealCount.ToString(),
+                $"£{stage.TotalAmount:N0}",
+                $"{stage.PercentageOfPipeline:F1}%");
+        }
+        AnsiConsole.Write(stageTable);
+
+        AnsiConsole.MarkupLine("\n    [bold]By Owner:[/]");
+        var ownerTable = new Table().Border(TableBorder.Simple);
+        ownerTable.AddColumn("Owner");
+        ownerTable.AddColumn(new TableColumn("Open").RightAligned());
+        ownerTable.AddColumn(new TableColumn("Pipeline").RightAligned());
+        ownerTable.AddColumn(new TableColumn("Win Rate").RightAligned());
+        foreach (var owner in forecast.ByOwner.Take(5))
+        {
+            ownerTable.AddRow(
+                owner.Owner,
+                owner.DealCount.ToString(),
+                $"£{owner.TotalAmount:N0}",
+                $"{owner.WinRate:F1}%");
+        }
+        AnsiConsole.Write(ownerTable);
+
+        AnsiConsole.MarkupLine("\n    [bold]By Close Month:[/]");
+        var monthTable = new Table().Border(TableBorder.Simple);
+        monthTable.AddColumn("Month");
+        monthTable.AddColumn(new TableColumn("Deals").RightAligned());
+        monthTable.AddColumn(new TableColumn("Weighted").RightAligned());
+        foreach (var month in forecast.ByCloseMonth.Take(4))
+        {
+            monthTable.AddRow(
+                month.MonthName,
+                month.DealCount.ToString(),
+                $"£{month.WeightedAmount:N0}");
+        }
+        AnsiConsole.Write(monthTable);
+        AnsiConsole.WriteLine();
+
+        // 6. Sample Deal Lookup
+        AnsiConsole.MarkupLine("[bold yellow]>>> STEP 6: SAMPLE DEAL LOOKUP[/]");
+        var deals = await _pipelineService.ListDealsAsync();
+        var sampleDeal = deals.FirstOrDefault();
+        if (sampleDeal != null)
+        {
+            var dealTable = new Table().Border(TableBorder.Rounded);
+            dealTable.AddColumn("Field");
+            dealTable.AddColumn("Value");
+            dealTable.AddRow("Deal ID", sampleDeal.DealId);
+            dealTable.AddRow("Deal Name", sampleDeal.DealName);
+            dealTable.AddRow("Account", sampleDeal.AccountName);
+            dealTable.AddRow("Contact", sampleDeal.ContactName ?? "-");
+            dealTable.AddRow("Stage", sampleDeal.Stage.ToDisplayString());
+            dealTable.AddRow("Amount", $"£{sampleDeal.AmountGBP:N0}");
+            dealTable.AddRow("Weighted", $"£{sampleDeal.WeightedAmountGBP:N0}");
+            dealTable.AddRow("Owner", sampleDeal.Owner ?? "-");
+            dealTable.AddRow("Region", sampleDeal.Region ?? "-");
+            dealTable.AddRow("Next Step", sampleDeal.NextStep ?? "-");
+            dealTable.AddRow("Tags", string.Join(", ", sampleDeal.Tags));
+            AnsiConsole.Write(dealTable);
+        }
+        AnsiConsole.WriteLine();
+
+        // 7. Save to Excel
+        AnsiConsole.MarkupLine("[bold yellow]>>> STEP 7: SAVING TO EXCEL[/]");
+        await _repository.SaveChangesAsync();
+        var allDeals = await _repository.GetAllAsync();
+        AnsiConsole.MarkupLine($"    Saved [green]{allDeals.Count}[/] deals to: [blue]{_excelPath}[/]\n");
+
+        AnsiConsole.Write(new Rule("[green]Demo Complete![/]").RuleStyle("green"));
+    }
 }

@@ -26,7 +26,7 @@ using Ox4D.Core.Models;
 using Ox4D.Core.Models.Config;
 using Ox4D.Core.Services;
 
-namespace Ox4D.Storage;
+namespace Ox4D.Store;
 
 /// <summary>
 /// Excel-based repository that treats each worksheet as a database table.
@@ -157,7 +157,13 @@ public class ExcelDealRepository : IDealRepository
                 LastServiceDate = DealNormalizer.ParseDate(GetCellValue(worksheetRow, headers, "LastServiceDate")),
                 NextServiceDueDate = DealNormalizer.ParseDate(GetCellValue(worksheetRow, headers, "NextServiceDueDate")),
                 Comments = GetCellValue(worksheetRow, headers, "Comments", "Notes"),
-                Tags = ParseTags(GetCellValue(worksheetRow, headers, "Tags"))
+                Tags = ParseTags(GetCellValue(worksheetRow, headers, "Tags")),
+                // Promoter fields
+                PromoterId = GetCellValue(worksheetRow, headers, "PromoterId"),
+                PromoCode = GetCellValue(worksheetRow, headers, "PromoCode"),
+                PromoterCommission = DealNormalizer.ParseAmount(GetCellValue(worksheetRow, headers, "PromoterCommission", "Commission")),
+                CommissionPaid = ParseBool(GetCellValue(worksheetRow, headers, "CommissionPaid")),
+                CommissionPaidDate = DealNormalizer.ParseDate(GetCellValue(worksheetRow, headers, "CommissionPaidDate"))
             };
 
             deals.Add(_normalizer.Normalize(deal));
@@ -253,7 +259,9 @@ public class ExcelDealRepository : IDealRepository
             "Postcode", "PostcodeArea", "InstallationLocation", "Region", "MapLink",
             "LeadSource", "ProductLine", "DealName", "Stage", "Probability", "AmountGBP", "WeightedAmountGBP",
             "Owner", "CreatedDate", "LastContactedDate", "NextStep", "NextStepDueDate", "CloseDate",
-            "ServicePlan", "LastServiceDate", "NextServiceDueDate", "Comments", "Tags"
+            "ServicePlan", "LastServiceDate", "NextServiceDueDate", "Comments", "Tags",
+            // Promoter columns
+            "PromoterId", "PromoCode", "PromoterCommission", "CommissionPaid", "CommissionPaidDate"
         };
 
         // Write headers with formatting
@@ -301,6 +309,12 @@ public class ExcelDealRepository : IDealRepository
             if (deal.NextServiceDueDate.HasValue) sheet.Cell(r, 28).Value = deal.NextServiceDueDate.Value;
             sheet.Cell(r, 29).Value = deal.Comments ?? "";
             sheet.Cell(r, 30).Value = string.Join(", ", deal.Tags);
+            // Promoter fields
+            sheet.Cell(r, 31).Value = deal.PromoterId ?? "";
+            sheet.Cell(r, 32).Value = deal.PromoCode ?? "";
+            sheet.Cell(r, 33).Value = deal.PromoterCommission ?? 0;
+            sheet.Cell(r, 34).Value = deal.CommissionPaid ? "Yes" : "No";
+            if (deal.CommissionPaidDate.HasValue) sheet.Cell(r, 35).Value = deal.CommissionPaidDate.Value;
         }
 
         // Format as table with auto-filter
@@ -358,7 +372,7 @@ public class ExcelDealRepository : IDealRepository
         sheet.Cell(1, 2).Style.Fill.BackgroundColor = XLColor.LightSteelBlue;
 
         sheet.Cell(2, 1).Value = "Version";
-        sheet.Cell(2, 2).Value = "1.0";
+        sheet.Cell(2, 2).Value = "1.1";
         sheet.Cell(3, 1).Value = "LastModified";
         sheet.Cell(3, 2).Value = DateTime.UtcNow;
         sheet.Cell(4, 1).Value = "DealCount";
@@ -385,6 +399,14 @@ public class ExcelDealRepository : IDealRepository
 
     private int ParseInt(string? value) =>
         int.TryParse(value?.Replace("%", "").Trim(), out var result) ? result : 0;
+
+    private bool ParseBool(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return false;
+        return value.Trim().Equals("Yes", StringComparison.OrdinalIgnoreCase)
+            || value.Trim().Equals("True", StringComparison.OrdinalIgnoreCase)
+            || value.Trim() == "1";
+    }
 
     private List<string> ParseTags(string? value)
     {

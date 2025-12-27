@@ -20,7 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Ox4D.Core\Ox4D.Core.csproj" />
-    <ProjectReference Include="..\..\src\Ox4D.Storage\Ox4D.Storage.csproj" />
+    <ProjectReference Include="..\..\src\Ox4D.Store\Ox4D.Store.csproj" />
   </ItemGroup>
 
 </Project>

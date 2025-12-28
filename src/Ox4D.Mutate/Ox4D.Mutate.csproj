@@ -1,10 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-  </PropertyGroup>
+  <!-- Settings inherited from Directory.Build.props -->
 
   <ItemGroup>
     <PackageReference Include="Bogus" Version="35.6.1" />

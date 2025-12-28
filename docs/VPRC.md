@@ -1,8 +1,8 @@
 # VPRC.md — Verify Product Requirements Through Console
 
 > **Purpose:** Unified step-by-step verification guide to validate all 64 stories using Console, Demo, and MCP.
-> **Cross-Reference:** [UseCases.md](UseCases.md) for persona-specific use cases | [PRCD.md](PRCD.md) for requirements
-> **Last Updated:** 2025-12-27
+> **Cross-Reference:** [UseCases.md](UseCases.md) for persona-specific use cases | [PRCD.md](PRCD.md) for requirements | [TestPlan.md](TestPlan.md) for test specifications
+> **Last Updated:** 2025-12-28
 
 ---
 
@@ -42,7 +42,7 @@ dotnet build
 
 # 2. Run all tests
 dotnet test
-# Expected: 22/22 tests pass
+# Expected: 393/393 tests pass
 
 # 3. Verify .NET version
 dotnet --version
@@ -525,7 +525,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"promoter.actions","params":{"promoCode":
 ```bash
 # Run all tests
 dotnet test --verbosity normal
-# Expected: 22/22 pass
+# Expected: 393/393 pass
 
 # S5.3.1 — Normalization tests
 dotnet test --filter "FullyQualifiedName~Normaliz"
@@ -544,7 +544,7 @@ dotnet test --filter "FullyQualifiedName~Synthetic"
 - [ ] S5.3.1 — Normalization tests pass
 - [ ] S5.3.2 — Report tests pass
 - [ ] S5.3.3 — Synthetic data tests pass
-- [ ] All 22 tests pass
+- [ ] All 393 tests pass
 
 ---
 

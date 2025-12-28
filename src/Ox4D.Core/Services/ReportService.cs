@@ -8,11 +8,13 @@ public class ReportService
 {
     private readonly IDealRepository _repository;
     private readonly PipelineSettings _settings;
+    private readonly IClock _clock;
 
-    public ReportService(IDealRepository repository, PipelineSettings settings)
+    public ReportService(IDealRepository repository, PipelineSettings settings, IClock? clock = null)
     {
         _repository = repository;
         _settings = settings;
+        _clock = clock ?? SystemClock.Instance;
     }
 
     public async Task<DailyBrief> GenerateDailyBriefAsync(DateTime referenceDate, CancellationToken ct = default)
@@ -161,7 +163,7 @@ public class ReportService
 
         return new HygieneReport
         {
-            GeneratedAt = DateTime.Now,
+            GeneratedAt = _clock.Now,
             TotalDeals = deals.Count,
             DealsWithIssues = dealsWithIssues,
             Issues = issues.OrderByDescending(i => i.Severity)

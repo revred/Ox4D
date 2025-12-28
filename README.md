@@ -143,6 +143,15 @@ Ox4D/
 ├── data/
 │   └── SalesPipelineV1.0.xlsx  # Primary data storage
 │
+├── docs/                       # Documentation
+│   ├── architecture.md         # System architecture
+│   ├── schema.md               # Data schema reference
+│   ├── PRCD.md                 # Product requirements
+│   ├── VPRC.md                 # Verification guide
+│   ├── UseCases.md             # User personas and use cases
+│   ├── TestPlan.md             # Test specifications
+│   └── Review/                 # Code and design reviews
+│
 └── Ox4D.sln
 ```
 
@@ -342,6 +351,29 @@ This design ensures that migrating to Supabase (or PostgreSQL) requires only imp
 - [ ] **Email Integration**: Auto-log communications from Outlook/Gmail
 - [ ] **Calendar Sync**: Create follow-up reminders from NextStepDueDate
 - [ ] **Slack/Teams**: Report delivery and deal alerts
+
+---
+
+## Documentation
+
+Comprehensive documentation is available in the [`docs/`](docs/) folder:
+
+| Document | Description |
+|----------|-------------|
+| [architecture.md](docs/architecture.md) | System architecture with diagrams and design patterns |
+| [schema.md](docs/schema.md) | Complete data schema reference for Excel sheets |
+| [PRCD.md](docs/PRCD.md) | Product requirements and diagnostics |
+| [VPRC.md](docs/VPRC.md) | Verification guide for 64 user stories |
+| [UseCases.md](docs/UseCases.md) | User personas and detailed use cases |
+| [TestPlan.md](docs/TestPlan.md) | Test specifications (393 tests) |
+
+### Review Documents
+
+| Document | Description |
+|----------|-------------|
+| [DesignReview.md](docs/Review/DesignReview.md) | Architecture and design review findings |
+| [CodeReview.md](docs/Review/CodeReview.md) | File-specific code review notes |
+| [TestReview.md](docs/Review/TestReview.md) | Test coverage review and gap analysis |
 
 ---
 

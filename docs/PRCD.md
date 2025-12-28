@@ -1,7 +1,8 @@
 # PRCD.md — Product Requirements Context and Diagnostics
 
-> **Last Updated:** 2025-12-27
-> **Solution Version:** 1.0
+> **Last Updated:** 2025-12-28
+> **Solution Version:** 1.1
+> **Cross-Reference:** [VPRC.md](VPRC.md) | [UseCases.md](UseCases.md) | [TestPlan.md](TestPlan.md)
 > **.NET Version:** 10.0.100
 
 ---
@@ -755,18 +756,21 @@ This unified approach eliminates the need for a separate Demo project.
 
 | Objective | Goal | Deliverable | Status |
 |-----------|------|-------------|--------|
-| Test deal normalization | G5 | 7 tests for DealNormalizer | ✅ Complete |
-| Test report generation | G3, G5 | 5 tests for ReportService | ✅ Complete |
-| Test synthetic data | G5 | 6 tests for SyntheticDataGenerator | ✅ Complete |
+| Test deal normalization | G5 | 17+ tests for DealNormalizer | ✅ Complete |
+| Test report generation | G3, G5 | 25+ tests for ReportService | ✅ Complete |
+| Test synthetic data | G5 | 16+ tests for SyntheticDataGenerator | ✅ Complete |
 | Achieve deterministic results | G5 | Same seed = same output | ✅ Complete |
-| Enable CI/CD integration | G5 | All 22 tests pass in < 2 seconds | ✅ Complete |
+| Enable CI/CD integration | G5 | All 393 tests pass in < 2 seconds | ✅ Complete |
 
 #### Test Coverage by Goal
 
 | Goal | Test Count | Coverage Area |
 |------|------------|---------------|
-| G3 (Intelligence) | 5 | Report generation accuracy |
-| G5 (Dev Experience) | 17 | Normalization, data generation, parsing |
+| G1 (AI-Ready) | 30+ | MCP tools, CRUD operations |
+| G2 (No Lock-in) | 25+ | Repository pattern, Excel storage |
+| G3 (Intelligence) | 75+ | Report generation, deal management |
+| G4 (Promoters) | 45+ | Promoter dashboard, actions |
+| G5 (Dev Experience) | 35+ | Normalization, data generation, testing |
 
 ---
 
@@ -780,7 +784,7 @@ This unified approach eliminates the need for a separate Demo project.
 | **G2: No Lock-in** | Core, Store | ✅ ACHIEVED | IDealRepository abstraction, sheet-per-table Excel |
 | **G3: Intelligence** | Core, Console, Zarwin | ✅ ACHIEVED | 3 actionable reports, 35+ deal fields |
 | **G4: Promoters** | Core, Console, Zarwin | ✅ ACHIEVED | PromoterService, dashboard, MCP tools |
-| **G5: Dev Experience** | All Projects | ✅ ACHIEVED | Clean architecture, 22 tests, Bogus generator |
+| **G5: Dev Experience** | All Projects | ✅ ACHIEVED | Clean architecture, 393 tests, Bogus generator |
 
 ### 4.2 Architecture Diagram with Goals
 
@@ -839,17 +843,13 @@ This unified approach eliminates the need for a separate Demo project.
 ```
 Build Status: SUCCESS
 Errors: 0
-Warnings: 20 (all NU1903 - transitive dependency vulnerability)
+Warnings: 0
 Build Time: ~1.4 seconds
 ```
 
 ### 2.2 Warning Analysis
 
-| Warning Code | Count | Source | Severity | Mitigation |
-|--------------|-------|--------|----------|------------|
-| NU1903 | 20 | System.IO.Packaging 6.0.0 (via ClosedXML) | High | Awaiting ClosedXML update |
-
-**Note:** The vulnerability is in a transitive dependency from ClosedXML. No direct action required until ClosedXML releases a patched version.
+No warnings. Previously NU1903 vulnerability warnings from ClosedXML transitive dependencies have been resolved by package updates.
 
 ### 2.3 Target Framework
 
@@ -866,28 +866,39 @@ All projects target: net10.0
 ### 3.1 Test Suite Results
 
 ```
-Total Tests: 22
-Passed: 22
+Total Tests: 393
+Passed: 393
 Failed: 0
 Skipped: 0
-Duration: 1.145 seconds
+Duration: ~1 second
 ```
 
 ### 3.2 Test Coverage by Category
 
 | Category | Tests | Status |
 |----------|-------|--------|
-| DealNormalizerTests | 7 | All Pass |
-| SyntheticDataGeneratorTests | 6 | All Pass |
-| ReportServiceTests | 5 | All Pass |
-| Date Parsing | 3 | All Pass |
-| Amount Parsing | 1 | All Pass |
+| DealNormalizerTests | 17+ | All Pass |
+| SyntheticDataGeneratorTests | 16+ | All Pass |
+| ReportServiceTests | 25+ | All Pass |
+| RepositoryContractTests | 38+ | All Pass |
+| ExcelFailureModeTests | 19 | All Pass |
+| PipelineServiceTests | 35+ | All Pass |
+| PromoterServiceTests | 40+ | All Pass |
+| DealFilterTests | 15+ | All Pass |
+| IClock Tests | 5 | All Pass |
+| NormalizationChangeTracking | 10 | All Pass |
+| And more... | ... | All Pass |
 
 ### 3.3 Test Files
 
 - `tests/Ox4D.Tests/DealNormalizerTests.cs`
 - `tests/Ox4D.Tests/SyntheticDataGeneratorTests.cs`
 - `tests/Ox4D.Tests/ReportServiceTests.cs`
+- `tests/Ox4D.Tests/RepositoryContractTests.cs`
+- `tests/Ox4D.Tests/InMemoryRepositoryContractTests.cs`
+- `tests/Ox4D.Tests/ExcelRepositoryContractTests.cs`
+- `tests/Ox4D.Tests/ExcelFailureModeTests.cs`
+- And more...
 
 ---
 
@@ -1202,7 +1213,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"pipeline.daily_brief"}' | dotnet run --p
 | Category | Result |
 |----------|--------|
 | Build | PASS |
-| Tests | 22/22 PASS |
+| Tests | 393/393 PASS |
 | Console App | FUNCTIONAL |
 | MCP Server | OPERATIONAL |
 | Data Storage | VERIFIED |

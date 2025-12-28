@@ -1,7 +1,8 @@
 # UseCases.md — User Personas and Detailed Use Cases
 
 > **Purpose:** Define distinct user personas and their use cases for the Ox4D Sales Pipeline Manager.
-> **Last Updated:** 2025-12-27
+> **Cross-Reference:** [VPRC.md](VPRC.md) for verification recipes | [PRCD.md](PRCD.md) for requirements | [TestPlan.md](TestPlan.md) for test specifications
+> **Last Updated:** 2025-12-28
 
 ---
 

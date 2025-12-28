@@ -2,6 +2,31 @@ using System.Text.Json.Serialization;
 
 namespace Ox4D.Zarwin.Protocol;
 
+/// <summary>
+/// MCP Server version and metadata
+/// </summary>
+public static class McpServerInfo
+{
+    public const string Version = "1.1.0";
+    public const string Name = "ox4d-pipeline";
+    public const string Description = "Ox4D Sales Pipeline Manager MCP Server";
+    public const string ProtocolVersion = "2024-11-05";
+
+    public static object GetServerInfo() => new
+    {
+        name = Name,
+        version = Version,
+        description = Description,
+        protocolVersion = ProtocolVersion,
+        capabilities = new
+        {
+            tools = true,
+            resources = false,
+            prompts = false
+        }
+    };
+}
+
 public class ToolDefinition
 {
     [JsonPropertyName("name")]
@@ -9,6 +34,10 @@ public class ToolDefinition
 
     [JsonPropertyName("description")]
     public string Description { get; set; } = string.Empty;
+
+    [JsonPropertyName("version")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Version { get; set; }
 
     [JsonPropertyName("inputSchema")]
     public ToolInputSchema InputSchema { get; set; } = new();

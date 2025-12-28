@@ -3,6 +3,28 @@ using Ox4D.Core.Models.Config;
 
 namespace Ox4D.Core.Services;
 
+/// <summary>
+/// Represents a single change made during normalization
+/// </summary>
+public record NormalizationChange(
+    string FieldName,
+    string? OldValue,
+    string? NewValue,
+    string Reason
+);
+
+/// <summary>
+/// Result of normalizing a deal, including the normalized deal and any changes made
+/// </summary>
+public class NormalizationResult
+{
+    public Deal Deal { get; init; } = null!;
+    public List<NormalizationChange> Changes { get; init; } = new();
+    public bool HasChanges => Changes.Count > 0;
+
+    public static NormalizationResult NoChanges(Deal deal) => new() { Deal = deal };
+}
+
 public class DealNormalizer
 {
     private readonly LookupTables _lookups;
@@ -12,27 +34,75 @@ public class DealNormalizer
         _lookups = lookups;
     }
 
+    /// <summary>
+    /// Normalizes a deal without tracking changes (original behavior)
+    /// </summary>
     public Deal Normalize(Deal deal)
     {
-        var normalized = deal.Clone();
+        return NormalizeWithTracking(deal).Deal;
+    }
 
-        // Normalize stage
+    /// <summary>
+    /// Normalizes a deal and returns detailed change tracking
+    /// </summary>
+    public NormalizationResult NormalizeWithTracking(Deal deal)
+    {
+        var normalized = deal.Clone();
+        var changes = new List<NormalizationChange>();
+
+        // Generate DealId if missing
         if (string.IsNullOrEmpty(normalized.DealId))
         {
-            normalized.DealId = GenerateDealId();
+            var newId = GenerateDealId();
+            changes.Add(new NormalizationChange(
+                nameof(Deal.DealId),
+                null,
+                newId,
+                "Auto-generated missing DealId"));
+            normalized.DealId = newId;
         }
 
         // Set probability from stage if not set or zero
         if (normalized.Probability <= 0)
         {
-            normalized.Probability = _lookups.GetProbabilityForStage(normalized.Stage);
+            var oldProb = normalized.Probability;
+            var newProb = _lookups.GetProbabilityForStage(normalized.Stage);
+            changes.Add(new NormalizationChange(
+                nameof(Deal.Probability),
+                oldProb.ToString(),
+                newProb.ToString(),
+                $"Set default probability for stage {normalized.Stage}"));
+            normalized.Probability = newProb;
         }
 
         // Extract postcode area and region
         if (!string.IsNullOrWhiteSpace(normalized.Postcode))
         {
-            normalized.PostcodeArea = LookupTables.ExtractPostcodeArea(normalized.Postcode);
-            normalized.Region ??= _lookups.GetRegionForPostcode(normalized.Postcode);
+            var oldArea = normalized.PostcodeArea;
+            var newArea = LookupTables.ExtractPostcodeArea(normalized.Postcode);
+            if (oldArea != newArea)
+            {
+                changes.Add(new NormalizationChange(
+                    nameof(Deal.PostcodeArea),
+                    oldArea,
+                    newArea,
+                    $"Extracted from postcode {normalized.Postcode}"));
+                normalized.PostcodeArea = newArea;
+            }
+
+            if (normalized.Region == null)
+            {
+                var newRegion = _lookups.GetRegionForPostcode(normalized.Postcode);
+                if (newRegion != null)
+                {
+                    changes.Add(new NormalizationChange(
+                        nameof(Deal.Region),
+                        null,
+                        newRegion,
+                        $"Derived from postcode area {newArea}"));
+                    normalized.Region = newRegion;
+                }
+            }
         }
 
         // Generate map link
@@ -41,20 +111,49 @@ public class DealNormalizer
             var address = !string.IsNullOrWhiteSpace(normalized.InstallationLocation)
                 ? $"{normalized.InstallationLocation}, {normalized.Postcode}"
                 : normalized.Postcode;
-            normalized.MapLink = $"https://www.google.com/maps/search/?api=1&query={Uri.EscapeDataString(address)}";
+            var newMapLink = $"https://www.google.com/maps/search/?api=1&query={Uri.EscapeDataString(address)}";
+            changes.Add(new NormalizationChange(
+                nameof(Deal.MapLink),
+                null,
+                newMapLink,
+                "Generated Google Maps link from address"));
+            normalized.MapLink = newMapLink;
         }
 
         // Set created date if missing
-        normalized.CreatedDate ??= DateTime.Today;
+        if (!normalized.CreatedDate.HasValue)
+        {
+            var newDate = DateTime.Today;
+            changes.Add(new NormalizationChange(
+                nameof(Deal.CreatedDate),
+                null,
+                newDate.ToString("yyyy-MM-dd"),
+                "Set default creation date"));
+            normalized.CreatedDate = newDate;
+        }
 
         // Normalize tags
+        var originalTags = string.Join(", ", normalized.Tags);
         normalized.Tags = normalized.Tags
             .Where(t => !string.IsNullOrWhiteSpace(t))
             .Select(t => t.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+        var normalizedTags = string.Join(", ", normalized.Tags);
+        if (originalTags != normalizedTags)
+        {
+            changes.Add(new NormalizationChange(
+                nameof(Deal.Tags),
+                originalTags,
+                normalizedTags,
+                "Cleaned and deduplicated tags"));
+        }
 
-        return normalized;
+        return new NormalizationResult
+        {
+            Deal = normalized,
+            Changes = changes
+        };
     }
 
     public static string GenerateDealId() =>

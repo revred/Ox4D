@@ -1,0 +1,37 @@
+<Project>
+  <!-- Centralized build settings for Ox4D Sales Pipeline Manager -->
+
+  <PropertyGroup>
+    <!-- Language and Framework Settings -->
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <!-- Code Analysis -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <AnalysisLevel>latest</AnalysisLevel>
+
+    <!-- Assembly Information -->
+    <Company>Ox4D</Company>
+    <Product>Ox4D Sales Pipeline Manager</Product>
+    <Copyright>Copyright (c) 2025 Ox4D</Copyright>
+    <Authors>Ox4D Team</Authors>
+
+    <!-- Version Information (managed centrally) -->
+    <Version>1.1.0</Version>
+    <AssemblyVersion>1.1.0.0</AssemblyVersion>
+    <FileVersion>1.1.0.0</FileVersion>
+
+    <!-- Repository Information -->
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/ox4d/Ox4D</RepositoryUrl>
+  </PropertyGroup>
+
+  <!-- Consistent output paths for easier debugging -->
+  <PropertyGroup>
+    <AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+
+</Project>

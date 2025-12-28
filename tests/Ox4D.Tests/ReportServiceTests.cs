@@ -691,6 +691,63 @@ public class ReportServiceTests
 
     #endregion
 
+    #region IClock Integration Tests
+
+    [Fact]
+    public async Task HygieneReport_UsesInjectedClock_ForGeneratedAt()
+    {
+        var fixedClock = FixedClock.At(2025, 6, 15, 14, 30, 0);
+        var serviceWithClock = new ReportService(_repository, _settings, fixedClock);
+
+        var deals = new List<Deal> { CreateDeal("D-001") };
+        _repository.LoadDeals(deals);
+
+        var report = await serviceWithClock.GenerateHygieneReportAsync();
+
+        report.GeneratedAt.Should().Be(new DateTime(2025, 6, 15, 14, 30, 0));
+    }
+
+    [Fact]
+    public async Task HygieneReport_UsesSystemClock_WhenNoClockProvided()
+    {
+        var before = DateTime.Now;
+        var report = await _reportService.GenerateHygieneReportAsync();
+        var after = DateTime.Now;
+
+        report.GeneratedAt.Should().BeOnOrAfter(before);
+        report.GeneratedAt.Should().BeOnOrBefore(after);
+    }
+
+    [Fact]
+    public void FixedClock_AtDate_CreatesMidnightClock()
+    {
+        var clock = FixedClock.AtDate(2025, 3, 20);
+
+        clock.Now.Should().Be(new DateTime(2025, 3, 20, 0, 0, 0));
+        clock.Today.Should().Be(new DateTime(2025, 3, 20));
+    }
+
+    [Fact]
+    public void FixedClock_At_CreatesClockWithSpecifiedTime()
+    {
+        var clock = FixedClock.At(2025, 12, 25, 10, 30, 45);
+
+        clock.Now.Should().Be(new DateTime(2025, 12, 25, 10, 30, 45));
+    }
+
+    [Fact]
+    public void SystemClock_ReturnsCurrentTime()
+    {
+        var before = DateTime.Now;
+        var now = SystemClock.Instance.Now;
+        var after = DateTime.Now;
+
+        now.Should().BeOnOrAfter(before);
+        now.Should().BeOnOrBefore(after);
+    }
+
+    #endregion
+
     #region Health Score and Report Totals
 
     [Fact]

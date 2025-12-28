@@ -16,9 +16,15 @@
 //   - Lookups sheet → lookups table (or split into postcode_regions, stage_probabilities)
 //   - Replace this class with SupabaseDealRepository implementing IDealRepository
 //
+// ATOMIC SAVE STRATEGY:
+//   1. Write to temp file
+//   2. Validate temp file integrity
+//   3. Create backup of existing file
+//   4. Replace original with temp file
+//
 // THREAD SAFETY:
-//   Not thread-safe. For concurrent access, use external locking or switch to
-//   a database-backed implementation.
+//   Uses file-based locking for concurrent access. For high-concurrency scenarios,
+//   switch to a database-backed implementation.
 // =============================================================================
 
 using ClosedXML.Excel;
@@ -27,6 +33,20 @@ using Ox4D.Core.Models.Config;
 using Ox4D.Core.Services;
 
 namespace Ox4D.Store;
+
+/// <summary>
+/// Result of Excel file validation
+/// </summary>
+public class ExcelValidationResult
+{
+    public bool IsValid { get; set; }
+    public List<string> Errors { get; set; } = new();
+    public List<string> Warnings { get; set; } = new();
+    public int DealCount { get; set; }
+    public bool HasDealsSheet { get; set; }
+    public bool HasLookupsSheet { get; set; }
+    public bool HasMetadataSheet { get; set; }
+}
 
 /// <summary>
 /// Excel-based repository that treats each worksheet as a database table.
@@ -42,6 +62,8 @@ public class ExcelDealRepository : IDealRepository
     private readonly string _filePath;
     private readonly LookupTables _lookups;
     private readonly DealNormalizer _normalizer;
+    private readonly object _fileLock = new();
+    private readonly int _maxBackups;
     private List<Deal> _deals = new();
     private bool _loaded = false;
     private bool _isDirty = false;
@@ -49,12 +71,20 @@ public class ExcelDealRepository : IDealRepository
     public const string DealsSheetName = "Deals";
     public const string LookupsSheetName = "Lookups";
     public const string MetadataSheetName = "Metadata";
+    public const string BackupExtension = ".bak";
 
-    public ExcelDealRepository(string filePath, LookupTables lookups)
+    // Required columns for validation
+    private static readonly string[] RequiredDealColumns = new[]
+    {
+        "DealId", "AccountName", "DealName", "Stage"
+    };
+
+    public ExcelDealRepository(string filePath, LookupTables lookups, int maxBackups = 5)
     {
         _filePath = filePath;
         _lookups = lookups;
         _normalizer = new DealNormalizer(lookups);
+        _maxBackups = maxBackups;
     }
 
     /// <summary>
@@ -85,20 +115,52 @@ public class ExcelDealRepository : IDealRepository
             return Task.CompletedTask;
         }
 
-        using var workbook = new XLWorkbook(_filePath);
-
-        // Load deals from Deals sheet
-        var dealsSheet = workbook.Worksheets.FirstOrDefault(ws =>
-            ws.Name.Equals(DealsSheetName, StringComparison.OrdinalIgnoreCase))
-            ?? workbook.Worksheets.FirstOrDefault();
-
-        if (dealsSheet != null)
+        lock (_fileLock)
         {
-            _deals = ReadDealsFromSheet(dealsSheet);
-        }
+            // Validate file integrity before loading
+            var validation = ValidateExcelFile(_filePath);
+            if (!validation.IsValid)
+            {
+                // Try to restore from backup if validation fails
+                if (RestoreFromBackup())
+                {
+                    validation = ValidateExcelFile(_filePath);
+                    if (!validation.IsValid)
+                    {
+                        throw new InvalidOperationException(
+                            $"Excel file is corrupted and backup restoration failed: {string.Join("; ", validation.Errors)}");
+                    }
+                }
+                else
+                {
+                    throw new InvalidOperationException(
+                        $"Excel file validation failed: {string.Join("; ", validation.Errors)}");
+                }
+            }
 
-        _loaded = true;
+            using var workbook = new XLWorkbook(_filePath);
+
+            // Load deals from Deals sheet
+            var dealsSheet = workbook.Worksheets.FirstOrDefault(ws =>
+                ws.Name.Equals(DealsSheetName, StringComparison.OrdinalIgnoreCase))
+                ?? workbook.Worksheets.FirstOrDefault();
+
+            if (dealsSheet != null)
+            {
+                _deals = ReadDealsFromSheet(dealsSheet);
+            }
+
+            _loaded = true;
+        }
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Validates the current Excel file without loading it
+    /// </summary>
+    public ExcelValidationResult Validate()
+    {
+        return ValidateExcelFile(_filePath);
     }
 
     private List<Deal> ReadDealsFromSheet(IXLWorksheet sheet)
@@ -175,19 +237,23 @@ public class ExcelDealRepository : IDealRepository
     public async Task<IReadOnlyList<Deal>> GetAllAsync(CancellationToken ct = default)
     {
         await EnsureLoadedAsync(ct);
-        return _deals.AsReadOnly();
+        // Return clones to prevent external modification of internal state
+        return _deals.Select(d => d.Clone()).ToList().AsReadOnly();
     }
 
     public async Task<Deal?> GetByIdAsync(string dealId, CancellationToken ct = default)
     {
         await EnsureLoadedAsync(ct);
-        return _deals.FirstOrDefault(d => d.DealId.Equals(dealId, StringComparison.OrdinalIgnoreCase));
+        var deal = _deals.FirstOrDefault(d => d.DealId.Equals(dealId, StringComparison.OrdinalIgnoreCase));
+        // Return clone to prevent external modification of internal state
+        return deal?.Clone();
     }
 
     public async Task<IReadOnlyList<Deal>> QueryAsync(DealFilter filter, DateTime referenceDate, CancellationToken ct = default)
     {
         await EnsureLoadedAsync(ct);
-        return _deals.Where(d => filter.Matches(d, referenceDate)).ToList().AsReadOnly();
+        // Return clones to prevent external modification of internal state
+        return _deals.Where(d => filter.Matches(d, referenceDate)).Select(d => d.Clone()).ToList().AsReadOnly();
     }
 
     public async Task UpsertAsync(Deal deal, CancellationToken ct = default)
@@ -225,30 +291,228 @@ public class ExcelDealRepository : IDealRepository
     {
         if (!_isDirty && File.Exists(_filePath)) return Task.CompletedTask;
 
-        var dir = Path.GetDirectoryName(_filePath);
-        if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+        lock (_fileLock)
         {
-            Directory.CreateDirectory(dir);
+            var dir = Path.GetDirectoryName(_filePath);
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+
+            // Step 1: Write to temp file (must have .xlsx extension for ClosedXML)
+            var tempFile = Path.Combine(
+                Path.GetDirectoryName(_filePath) ?? ".",
+                $"~${Path.GetFileName(_filePath)}.tmp.xlsx");
+            try
+            {
+                using (var workbook = new XLWorkbook())
+                {
+                    // Create Deals sheet (main table)
+                    var dealsSheet = workbook.Worksheets.Add(DealsSheetName);
+                    WriteDealsSheet(dealsSheet, _deals);
+
+                    // Create Lookups sheet (configuration table)
+                    var lookupsSheet = workbook.Worksheets.Add(LookupsSheetName);
+                    WriteLookupsSheet(lookupsSheet, _lookups);
+
+                    // Create Metadata sheet (version/audit table)
+                    var metadataSheet = workbook.Worksheets.Add(MetadataSheetName);
+                    WriteMetadataSheet(metadataSheet);
+
+                    workbook.SaveAs(tempFile);
+                }
+
+                // Step 2: Validate temp file integrity
+                var validation = ValidateExcelFile(tempFile);
+                if (!validation.IsValid)
+                {
+                    throw new InvalidOperationException(
+                        $"Validation failed for temp file: {string.Join("; ", validation.Errors)}");
+                }
+
+                // Step 3: Create backup of existing file
+                if (File.Exists(_filePath))
+                {
+                    CreateBackup();
+                }
+
+                // Step 4: Replace original with temp file (atomic on most filesystems)
+                File.Move(tempFile, _filePath, overwrite: true);
+                _isDirty = false;
+            }
+            catch
+            {
+                // Clean up temp file on failure
+                if (File.Exists(tempFile))
+                {
+                    try { File.Delete(tempFile); } catch { /* ignore cleanup errors */ }
+                }
+                throw;
+            }
         }
 
-        using var workbook = new XLWorkbook();
-
-        // Create Deals sheet (main table)
-        var dealsSheet = workbook.Worksheets.Add(DealsSheetName);
-        WriteDealsSheet(dealsSheet, _deals);
-
-        // Create Lookups sheet (configuration table)
-        var lookupsSheet = workbook.Worksheets.Add(LookupsSheetName);
-        WriteLookupsSheet(lookupsSheet, _lookups);
-
-        // Create Metadata sheet (version/audit table)
-        var metadataSheet = workbook.Worksheets.Add(MetadataSheetName);
-        WriteMetadataSheet(metadataSheet);
-
-        workbook.SaveAs(_filePath);
-        _isDirty = false;
-
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Validates an Excel file for structural integrity
+    /// </summary>
+    public static ExcelValidationResult ValidateExcelFile(string filePath)
+    {
+        var result = new ExcelValidationResult();
+
+        if (!File.Exists(filePath))
+        {
+            result.Errors.Add($"File does not exist: {filePath}");
+            return result;
+        }
+
+        try
+        {
+            using var workbook = new XLWorkbook(filePath);
+
+            // Check for required sheets
+            result.HasDealsSheet = workbook.Worksheets.Any(ws =>
+                ws.Name.Equals(DealsSheetName, StringComparison.OrdinalIgnoreCase));
+            result.HasLookupsSheet = workbook.Worksheets.Any(ws =>
+                ws.Name.Equals(LookupsSheetName, StringComparison.OrdinalIgnoreCase));
+            result.HasMetadataSheet = workbook.Worksheets.Any(ws =>
+                ws.Name.Equals(MetadataSheetName, StringComparison.OrdinalIgnoreCase));
+
+            if (!result.HasDealsSheet)
+            {
+                result.Errors.Add($"Missing required sheet: {DealsSheetName}");
+            }
+            else
+            {
+                // Validate Deals sheet structure
+                var dealsSheet = workbook.Worksheets.First(ws =>
+                    ws.Name.Equals(DealsSheetName, StringComparison.OrdinalIgnoreCase));
+
+                var headers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var lastCol = dealsSheet.LastColumnUsed()?.ColumnNumber() ?? 0;
+
+                for (int col = 1; col <= lastCol; col++)
+                {
+                    var header = dealsSheet.Cell(1, col).GetString().Trim();
+                    if (!string.IsNullOrEmpty(header))
+                    {
+                        headers.Add(header.Replace(" ", "").Replace("_", ""));
+                    }
+                }
+
+                // Check for required columns
+                foreach (var required in RequiredDealColumns)
+                {
+                    var normalized = required.Replace(" ", "").Replace("_", "");
+                    if (!headers.Contains(normalized))
+                    {
+                        result.Errors.Add($"Missing required column: {required}");
+                    }
+                }
+
+                // Count deals
+                var lastRow = dealsSheet.LastRowUsed()?.RowNumber() ?? 1;
+                result.DealCount = Math.Max(0, lastRow - 1);
+            }
+
+            if (!result.HasLookupsSheet)
+            {
+                result.Warnings.Add($"Missing optional sheet: {LookupsSheetName}");
+            }
+
+            if (!result.HasMetadataSheet)
+            {
+                result.Warnings.Add($"Missing optional sheet: {MetadataSheetName}");
+            }
+
+            result.IsValid = result.Errors.Count == 0;
+        }
+        catch (Exception ex)
+        {
+            result.Errors.Add($"Failed to read Excel file: {ex.Message}");
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Creates a timestamped backup of the current file
+    /// </summary>
+    private void CreateBackup()
+    {
+        if (!File.Exists(_filePath)) return;
+
+        var dir = Path.GetDirectoryName(_filePath) ?? ".";
+        var fileName = Path.GetFileNameWithoutExtension(_filePath);
+        var ext = Path.GetExtension(_filePath);
+
+        // Create backup with timestamp
+        var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+        var backupPath = Path.Combine(dir, $"{fileName}_{timestamp}{ext}{BackupExtension}");
+        File.Copy(_filePath, backupPath, overwrite: true);
+
+        // Rotate backups - keep only the most recent N
+        RotateBackups(dir, fileName, ext);
+    }
+
+    /// <summary>
+    /// Removes old backups keeping only the most recent ones
+    /// </summary>
+    private void RotateBackups(string dir, string fileName, string ext)
+    {
+        var pattern = $"{fileName}_*{ext}{BackupExtension}";
+        var backups = Directory.GetFiles(dir, pattern)
+            .OrderByDescending(f => f)
+            .Skip(_maxBackups)
+            .ToList();
+
+        foreach (var oldBackup in backups)
+        {
+            try { File.Delete(oldBackup); } catch { /* ignore deletion errors */ }
+        }
+    }
+
+    /// <summary>
+    /// Restores from the most recent backup
+    /// </summary>
+    public bool RestoreFromBackup()
+    {
+        var dir = Path.GetDirectoryName(_filePath) ?? ".";
+        var fileName = Path.GetFileNameWithoutExtension(_filePath);
+        var ext = Path.GetExtension(_filePath);
+
+        var pattern = $"{fileName}_*{ext}{BackupExtension}";
+        var latestBackup = Directory.GetFiles(dir, pattern)
+            .OrderByDescending(f => f)
+            .FirstOrDefault();
+
+        if (latestBackup == null) return false;
+
+        lock (_fileLock)
+        {
+            File.Copy(latestBackup, _filePath, overwrite: true);
+            _loaded = false;
+            _isDirty = false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Gets a list of available backup files
+    /// </summary>
+    public IReadOnlyList<string> GetBackups()
+    {
+        var dir = Path.GetDirectoryName(_filePath) ?? ".";
+        var fileName = Path.GetFileNameWithoutExtension(_filePath);
+        var ext = Path.GetExtension(_filePath);
+
+        var pattern = $"{fileName}_*{ext}{BackupExtension}";
+        return Directory.GetFiles(dir, pattern)
+            .OrderByDescending(f => f)
+            .ToList()
+            .AsReadOnly();
     }
 
     private void WriteDealsSheet(IXLWorksheet sheet, List<Deal> deals)

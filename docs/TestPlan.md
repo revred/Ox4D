@@ -2,10 +2,23 @@
 
 > **Purpose:** Map all 64 stories to 200+ specific test cases organized by Epic
 > **Cross-Reference:** [PRCD.md](PRCD.md) | [VPRC.md](VPRC.md) | [UseCases.md](UseCases.md)
-> **Current Tests:** 415 (achieved) | **Original Target:** 200+
+> **Current Tests:** 438 (achieved) | **Original Target:** 200+
 > **Last Updated:** 2025-12-28
 
 ## Recent Additions (v1.2)
+
+- **DeterministicContextTests.cs** — 14 tests for ISystemContext and deterministic operations
+  - SystemContext factory methods (Default, ForTesting, ForSyntheticData)
+  - SequentialDealIdGenerator format and uniqueness
+  - SeededDealIdGenerator determinism and reproducibility
+  - DealNormalizer integration with ISystemContext
+
+- **SchemaMigrationTests.cs** — 9 tests for schema versioning and migration
+  - Version constant verification (1.0, 1.1, 1.2)
+  - Legacy file detection (no Metadata sheet = v1.0)
+  - Auto-migration on load (v1.0 → v1.2, v1.1 → v1.2)
+  - Future version rejection (v2.0 throws)
+  - Migration chain data preservation
 
 - **PatchSemanticsTests.cs** — 22 tests for typed patch validation
   - Unknown field rejection
@@ -21,17 +34,20 @@
 
 ```
 tests/Ox4D.Tests/
-├── DealNormalizerTests.cs       # Existing - 7 tests
+├── DealNormalizerTests.cs         # Existing - 7 tests
 ├── SyntheticDataGeneratorTests.cs # Existing - 6 tests
-├── ReportServiceTests.cs        # Existing - 5 tests (expand to ~40)
-├── PipelineServiceTests.cs      # NEW - ~35 tests
-├── PromoterServiceTests.cs      # NEW - ~40 tests
-├── InMemoryRepositoryTests.cs   # NEW - ~20 tests
-├── DealFilterTests.cs           # NEW - ~15 tests
-├── DealModelTests.cs            # NEW - ~15 tests
-├── PromoterModelTests.cs        # NEW - ~15 tests
-├── LookupTablesTests.cs         # NEW - ~10 tests
-└── PipelineSettingsTests.cs     # NEW - ~5 tests
+├── ReportServiceTests.cs          # Existing - 5 tests (expand to ~40)
+├── DeterministicContextTests.cs   # NEW v1.2 - 14 tests (ISystemContext, ID generators)
+├── SchemaMigrationTests.cs        # NEW v1.2 - 9 tests (schema versioning)
+├── PatchSemanticsTests.cs         # NEW v1.2 - 22 tests (typed patch validation)
+├── PipelineServiceTests.cs        # NEW - ~35 tests
+├── PromoterServiceTests.cs        # NEW - ~40 tests
+├── InMemoryRepositoryTests.cs     # NEW - ~20 tests
+├── DealFilterTests.cs             # NEW - ~15 tests
+├── DealModelTests.cs              # NEW - ~15 tests
+├── PromoterModelTests.cs          # NEW - ~15 tests
+├── LookupTablesTests.cs           # NEW - ~10 tests
+└── PipelineSettingsTests.cs       # NEW - ~5 tests
 ```
 
 ---

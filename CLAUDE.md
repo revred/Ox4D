@@ -310,8 +310,10 @@ Two implementations available via `ISyntheticDataGenerator` interface:
 - [x] **Schema versioning** (v1.2) with migration scaffold
 - [x] **Deterministic ID generation** (IDealIdGenerator abstraction)
 - [x] **IClock injection** throughout for testable timestamps
+- [x] **ISystemContext** unified abstraction for complete determinism
+- [x] **In-memory repository indexes** for O(1) lookups
 - [x] **Cross-process Excel locking** with retry logic
-- [x] Unit tests (415 passing)
+- [x] Unit tests (438 passing)
 - [x] Project documentation
 - [x] .NET 10.0 upgrade
 
@@ -371,6 +373,21 @@ public interface IDealIdGenerator
 // Testing: SequentialDealIdGenerator, SeededDealIdGenerator
 ```
 
+### Unified System Context (ISystemContext)
+
+Single abstraction combining clock and ID generation:
+
+```csharp
+public interface ISystemContext
+{
+    IClock Clock { get; }
+    IDealIdGenerator DealIdGenerator { get; }
+}
+// Production: SystemContext.Default
+// Testing: SystemContext.ForTesting(fixedDate)
+// Synthetic: SystemContext.ForSyntheticData(date, seed)
+```
+
 ### Typed Patch Validation (DealPatch + PatchResult)
 
 No more silent failures from reflection-based patching:
@@ -399,5 +416,5 @@ Excel files track schema version in Metadata sheet:
 - All business logic in Ox4D.Core (not in storage or UI)
 - Maintain repository abstraction for storage swap
 - Use ISyntheticDataGenerator interface for data generation flexibility
-- Use IClock for all date/time operations (testability)
-- Use IDealIdGenerator for ID creation (reproducibility)
+- Use ISystemContext for all time and ID operations (complete determinism)
+- Prefer ISystemContext over individual IClock/IDealIdGenerator injection

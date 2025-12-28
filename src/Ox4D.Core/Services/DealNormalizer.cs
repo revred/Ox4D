@@ -28,18 +28,22 @@ public class NormalizationResult
 public class DealNormalizer
 {
     private readonly LookupTables _lookups;
-    private readonly IDealIdGenerator _idGenerator;
-    private readonly IClock _clock;
+    private readonly ISystemContext _context;
 
     public DealNormalizer(LookupTables lookups)
-        : this(lookups, new DefaultDealIdGenerator(), SystemClock.Instance) { }
+        : this(lookups, SystemContext.Default) { }
 
-    public DealNormalizer(LookupTables lookups, IDealIdGenerator idGenerator, IClock? clock = null)
+    public DealNormalizer(LookupTables lookups, ISystemContext context)
     {
         _lookups = lookups;
-        _idGenerator = idGenerator;
-        _clock = clock ?? SystemClock.Instance;
+        _context = context;
     }
+
+    /// <summary>
+    /// Creates a DealNormalizer with explicit clock and ID generator (backwards compatibility).
+    /// </summary>
+    public DealNormalizer(LookupTables lookups, IDealIdGenerator idGenerator, IClock? clock = null)
+        : this(lookups, new SystemContext(clock ?? SystemClock.Instance, idGenerator)) { }
 
     /// <summary>
     /// Normalizes a deal without tracking changes (original behavior)
@@ -60,7 +64,7 @@ public class DealNormalizer
         // Generate DealId if missing
         if (string.IsNullOrEmpty(normalized.DealId))
         {
-            var newId = _idGenerator.Generate();
+            var newId = _context.DealIdGenerator.Generate();
             changes.Add(new NormalizationChange(
                 nameof(Deal.DealId),
                 null,
@@ -130,7 +134,7 @@ public class DealNormalizer
         // Set created date if missing
         if (!normalized.CreatedDate.HasValue)
         {
-            var newDate = _clock.Today;
+            var newDate = _context.Clock.Today;
             changes.Add(new NormalizationChange(
                 nameof(Deal.CreatedDate),
                 null,

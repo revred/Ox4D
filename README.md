@@ -331,8 +331,10 @@ This design ensures that migrating to Supabase (or PostgreSQL) requires only imp
 - [x] **Schema versioning** (v1.2) with automatic migration
 - [x] **Deterministic ID generation** for reproducible tests
 - [x] **IClock injection** for testable timestamps
+- [x] **ISystemContext** unified abstraction for complete determinism
+- [x] **In-memory repository indexes** for O(1) lookups
 - [x] **Cross-process Excel locking** with retry logic
-- [x] **415 unit tests** passing
+- [x] **438 unit tests** passing
 
 ### Phase 2: Cloud Migration
 - [ ] **Supabase Integration**: Implement `SupabaseDealRepository` for cloud-native storage
@@ -371,7 +373,8 @@ Comprehensive documentation is available in the [`docs/`](docs/) folder:
 | [PRCD.md](docs/PRCD.md) | Product requirements and diagnostics |
 | [VPRC.md](docs/VPRC.md) | Verification guide for 64 user stories |
 | [UseCases.md](docs/UseCases.md) | User personas and detailed use cases |
-| [TestPlan.md](docs/TestPlan.md) | Test specifications (415 tests) |
+| [TestPlan.md](docs/TestPlan.md) | Test specifications (438 tests) |
+| [schema-changelog.md](docs/schema-changelog.md) | Schema version history and migration notes |
 | [NextSteps.md](docs/NextSteps.md) | Recent changes and remaining work |
 
 ### Review Documents

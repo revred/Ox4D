@@ -64,13 +64,18 @@ public class ExcelDealRepository : IDealRepository
     private readonly string _filePath;
     private readonly LookupTables _lookups;
     private readonly DealNormalizer _normalizer;
-    private readonly IClock _clock;
+    private readonly ISystemContext _context;
     private readonly object _fileLock = new();
     private readonly int _maxBackups;
     private List<Deal> _deals = new();
     private bool _loaded = false;
     private bool _isDirty = false;
     private string? _loadedSchemaVersion;
+
+    // In-memory indexes for O(1) lookups - built on load, invalidated on save
+    private Dictionary<string, Deal> _byId = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, List<Deal>> _byOwner = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<DealStage, List<Deal>> _byStage = new();
 
     public const string DealsSheetName = "Deals";
     public const string LookupsSheetName = "Lookups";
@@ -89,16 +94,22 @@ public class ExcelDealRepository : IDealRepository
     };
 
     public ExcelDealRepository(string filePath, LookupTables lookups, int maxBackups = 5)
-        : this(filePath, lookups, SystemClock.Instance, maxBackups) { }
+        : this(filePath, lookups, SystemContext.Default, maxBackups) { }
 
-    public ExcelDealRepository(string filePath, LookupTables lookups, IClock clock, int maxBackups = 5)
+    public ExcelDealRepository(string filePath, LookupTables lookups, ISystemContext context, int maxBackups = 5)
     {
         _filePath = filePath;
         _lookups = lookups;
-        _clock = clock;
-        _normalizer = new DealNormalizer(lookups);
+        _context = context;
+        _normalizer = new DealNormalizer(lookups, context);
         _maxBackups = maxBackups;
     }
+
+    /// <summary>
+    /// Creates a repository with explicit clock (backwards compatibility).
+    /// </summary>
+    public ExcelDealRepository(string filePath, LookupTables lookups, IClock clock, int maxBackups = 5)
+        : this(filePath, lookups, new SystemContext(clock, new DefaultDealIdGenerator(clock)), maxBackups) { }
 
     /// <summary>
     /// Gets the schema version of the currently loaded file
@@ -113,7 +124,74 @@ public class ExcelDealRepository : IDealRepository
         _loaded = false;
         _isDirty = false;
         _deals = new List<Deal>();
+        ClearIndexes();
         LoadAsync().Wait();
+    }
+
+    /// <summary>
+    /// Clears all in-memory indexes.
+    /// </summary>
+    private void ClearIndexes()
+    {
+        _byId.Clear();
+        _byOwner.Clear();
+        _byStage.Clear();
+    }
+
+    /// <summary>
+    /// Rebuilds all in-memory indexes from the deals list.
+    /// Called after loading data.
+    /// </summary>
+    private void RebuildIndexes()
+    {
+        ClearIndexes();
+
+        foreach (var deal in _deals)
+        {
+            IndexDeal(deal);
+        }
+    }
+
+    /// <summary>
+    /// Adds a single deal to all indexes.
+    /// </summary>
+    private void IndexDeal(Deal deal)
+    {
+        _byId[deal.DealId] = deal;
+
+        var owner = deal.Owner ?? "";
+        if (!_byOwner.TryGetValue(owner, out var ownerList))
+        {
+            ownerList = new List<Deal>();
+            _byOwner[owner] = ownerList;
+        }
+        ownerList.Add(deal);
+
+        if (!_byStage.TryGetValue(deal.Stage, out var stageList))
+        {
+            stageList = new List<Deal>();
+            _byStage[deal.Stage] = stageList;
+        }
+        stageList.Add(deal);
+    }
+
+    /// <summary>
+    /// Removes a deal from all indexes.
+    /// </summary>
+    private void UnindexDeal(Deal deal)
+    {
+        _byId.Remove(deal.DealId);
+
+        var owner = deal.Owner ?? "";
+        if (_byOwner.TryGetValue(owner, out var ownerList))
+        {
+            ownerList.RemoveAll(d => d.DealId.Equals(deal.DealId, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (_byStage.TryGetValue(deal.Stage, out var stageList))
+        {
+            stageList.RemoveAll(d => d.DealId.Equals(deal.DealId, StringComparison.OrdinalIgnoreCase));
+        }
     }
 
     public string FilePath => _filePath;
@@ -131,6 +209,7 @@ public class ExcelDealRepository : IDealRepository
             _deals = new List<Deal>();
             _loadedSchemaVersion = CurrentSchemaVersion;
             _loaded = true;
+            RebuildIndexes();
             return Task.CompletedTask;
         }
 
@@ -189,6 +268,7 @@ public class ExcelDealRepository : IDealRepository
             }
 
             _loaded = true;
+            RebuildIndexes();
 
             // If migration was needed, save the updated schema
             if (validation.RequiresMigration)
@@ -368,9 +448,12 @@ public class ExcelDealRepository : IDealRepository
     public async Task<Deal?> GetByIdAsync(string dealId, CancellationToken ct = default)
     {
         await EnsureLoadedAsync(ct);
-        var deal = _deals.FirstOrDefault(d => d.DealId.Equals(dealId, StringComparison.OrdinalIgnoreCase));
-        // Return clone to prevent external modification of internal state
-        return deal?.Clone();
+        // Use index for O(1) lookup instead of O(n) scan
+        if (_byId.TryGetValue(dealId, out var deal))
+        {
+            return deal.Clone();
+        }
+        return null;
     }
 
     public async Task<IReadOnlyList<Deal>> QueryAsync(DealFilter filter, DateTime referenceDate, CancellationToken ct = default)
@@ -384,15 +467,21 @@ public class ExcelDealRepository : IDealRepository
     {
         await EnsureLoadedAsync(ct);
 
-        var existing = _deals.FindIndex(d => d.DealId.Equals(deal.DealId, StringComparison.OrdinalIgnoreCase));
-        if (existing >= 0)
+        // Check if deal exists using index for O(1) lookup
+        if (_byId.TryGetValue(deal.DealId, out var existingDeal))
         {
-            _deals[existing] = deal;
+            // Remove old deal from indexes before update
+            UnindexDeal(existingDeal);
+            var idx = _deals.FindIndex(d => d.DealId.Equals(deal.DealId, StringComparison.OrdinalIgnoreCase));
+            if (idx >= 0) _deals[idx] = deal;
         }
         else
         {
             _deals.Add(deal);
         }
+
+        // Add new/updated deal to indexes
+        IndexDeal(deal);
         _isDirty = true;
     }
 
@@ -407,8 +496,14 @@ public class ExcelDealRepository : IDealRepository
     public async Task DeleteAsync(string dealId, CancellationToken ct = default)
     {
         await EnsureLoadedAsync(ct);
-        _deals.RemoveAll(d => d.DealId.Equals(dealId, StringComparison.OrdinalIgnoreCase));
-        _isDirty = true;
+
+        // Use index to find deal for O(1) lookup
+        if (_byId.TryGetValue(dealId, out var deal))
+        {
+            UnindexDeal(deal);
+            _deals.RemoveAll(d => d.DealId.Equals(dealId, StringComparison.OrdinalIgnoreCase));
+            _isDirty = true;
+        }
     }
 
     public Task SaveChangesAsync(CancellationToken ct = default)
@@ -639,7 +734,7 @@ public class ExcelDealRepository : IDealRepository
         var ext = Path.GetExtension(_filePath);
 
         // Create backup with timestamp (using injected clock for testability)
-        var timestamp = _clock.Now.ToString("yyyyMMdd_HHmmss");
+        var timestamp = _context.Clock.Now.ToString("yyyyMMdd_HHmmss");
         var backupPath = Path.Combine(dir, $"{fileName}_{timestamp}{ext}{BackupExtension}");
         File.Copy(_filePath, backupPath, overwrite: true);
 
@@ -829,7 +924,7 @@ public class ExcelDealRepository : IDealRepository
         sheet.Cell(2, 1).Value = "Version";
         sheet.Cell(2, 2).Value = CurrentSchemaVersion;
         sheet.Cell(3, 1).Value = "LastModified";
-        sheet.Cell(3, 2).Value = _clock.UtcNow;
+        sheet.Cell(3, 2).Value = _context.Clock.UtcNow;
         sheet.Cell(4, 1).Value = "DealCount";
         sheet.Cell(4, 2).Value = _deals.Count;
         sheet.Cell(5, 1).Value = "GeneratedBy";

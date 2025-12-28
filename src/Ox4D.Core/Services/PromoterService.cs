@@ -29,6 +29,7 @@ public class PromoterService
 {
     private readonly IDealRepository _repository;
     private readonly PipelineSettings _settings;
+    private readonly IClock _clock;
 
     // Thresholds for action recommendations
     private const int StaleLeadDays = 7;
@@ -40,9 +41,13 @@ public class PromoterService
     private const int NoProgressCriticalDays = 14;
 
     public PromoterService(IDealRepository repository, PipelineSettings settings)
+        : this(repository, settings, SystemClock.Instance) { }
+
+    public PromoterService(IDealRepository repository, PipelineSettings settings, IClock clock)
     {
         _repository = repository;
         _settings = settings;
+        _clock = clock;
     }
 
     /// <summary>
@@ -56,7 +61,7 @@ public class PromoterService
         DateTime? referenceDate = null,
         CancellationToken ct = default)
     {
-        var refDate = referenceDate ?? DateTime.Today;
+        var refDate = referenceDate ?? _clock.Today;
         var commissionRate = tier.GetCommissionRate();
 
         // Get all deals for this promoter
@@ -72,7 +77,7 @@ public class PromoterService
 
         var dashboard = new PromoterDashboard
         {
-            GeneratedAt = DateTime.UtcNow,
+            GeneratedAt = _clock.UtcNow,
             PromoterId = promoterId,
             PromoterName = promoterName,
             PromoCode = promoCode,
@@ -99,7 +104,7 @@ public class PromoterService
         DateTime? referenceDate = null,
         CancellationToken ct = default)
     {
-        var refDate = referenceDate ?? DateTime.Today;
+        var refDate = referenceDate ?? _clock.Today;
         var allDeals = await _repository.GetAllAsync(ct);
         var promoterDeals = allDeals
             .Where(d => string.Equals(d.PromoterId, promoterId, StringComparison.OrdinalIgnoreCase) ||
@@ -122,7 +127,7 @@ public class PromoterService
         DateTime? referenceDate = null,
         CancellationToken ct = default)
     {
-        var refDate = referenceDate ?? DateTime.Today;
+        var refDate = referenceDate ?? _clock.Today;
         var allDeals = await _repository.GetAllAsync(ct);
         var openDeals = allDeals
             .Where(d => !d.Stage.IsClosed() &&

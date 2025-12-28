@@ -147,6 +147,45 @@ public interface IDealIdGenerator
 // Synthetic: SeededDealIdGenerator (reproducible with same seed)
 ```
 
+### Unified System Context (ISystemContext)
+
+Single abstraction combining clock and ID generation for complete determinism:
+
+```csharp
+public interface ISystemContext
+{
+    IClock Clock { get; }
+    IDealIdGenerator DealIdGenerator { get; }
+}
+
+// Production: SystemContext.Default
+// Testing: SystemContext.ForTesting(fixedDate)
+// Synthetic: SystemContext.ForSyntheticData(date, seed)
+```
+
+Benefits:
+
+- Entire system replayable with same context
+- Backtests and demos produce identical results
+- "Why did this change?" becomes answerable
+
+### In-Memory Repository Indexes
+
+Repositories maintain in-memory indexes for O(1) lookups:
+
+```csharp
+Dictionary<string, Deal> _byId;        // GetByIdAsync
+Dictionary<string, List<Deal>> _byOwner;
+Dictionary<DealStage, List<Deal>> _byStage;
+```
+
+Rules:
+
+- Built on load
+- Invalidated on save
+- Excel remains source of truth
+- Enables millisecond queries even at scale
+
 ### Typed Patch Validation (DealPatch + PatchResult)
 
 Explicit validation replacing reflection-based patching:

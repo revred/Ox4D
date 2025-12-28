@@ -2,8 +2,18 @@
 
 > **Purpose:** Map all 64 stories to 200+ specific test cases organized by Epic
 > **Cross-Reference:** [PRCD.md](PRCD.md) | [VPRC.md](VPRC.md) | [UseCases.md](UseCases.md)
-> **Current Tests:** 393 (achieved) | **Original Target:** 200+
+> **Current Tests:** 415 (achieved) | **Original Target:** 200+
 > **Last Updated:** 2025-12-28
+
+## Recent Additions (v1.2)
+
+- **PatchSemanticsTests.cs** — 22 tests for typed patch validation
+  - Unknown field rejection
+  - Derived field rejection (PostcodeArea, Region)
+  - Invalid value rejection (probability out of range, negative amounts)
+  - Partial success handling
+  - Case-insensitive field names
+  - Tags and boolean parsing
 
 ---
 

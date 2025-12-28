@@ -77,10 +77,14 @@ Implements IDealRepository for different backends:
 - **InMemoryDealRepository**: Fast in-memory storage for testing
 
 Features:
-- Atomic save with temp file validation
-- Automatic backup rotation
+
+- Atomic save with temp file validation (unique GUID suffix)
+- Cross-process locking with retry and exponential backoff
+- Automatic backup rotation with configurable retention
 - File integrity validation on load
+- Schema versioning with auto-migration
 - Thread-safe with file locking
+- IClock injection for testable timestamps
 
 ## Key Design Patterns
 
@@ -101,17 +105,68 @@ public interface IDealRepository
 All repository methods return cloned objects to prevent external modification of internal state.
 
 ### Normalization with Change Tracking
+
 DealNormalizer applies business rules and tracks all changes:
+
 ```csharp
 var result = normalizer.NormalizeWithTracking(deal);
 // result.Changes contains list of all modifications made
 ```
 
-### Clock Abstraction
-IClock interface enables deterministic testing:
+### Clock Abstraction (IClock)
+
+All date/time operations use injectable `IClock` for deterministic testing:
+
 ```csharp
-var report = new ReportService(repo, settings, FixedClock.AtDate(2025, 1, 15));
+public interface IClock
+{
+    DateTime Now { get; }
+    DateTime UtcNow { get; }
+    DateTime Today { get; }
+}
+
+// Production use
+var repo = new ExcelDealRepository(path, lookups, SystemClock.Instance);
+
+// Test use
+var repo = new ExcelDealRepository(path, lookups, FixedClock.At(2025, 1, 15));
 ```
+
+### ID Generation Abstraction (IDealIdGenerator)
+
+Deterministic ID generation for reproducible tests and synthetic data:
+
+```csharp
+public interface IDealIdGenerator
+{
+    string Generate();
+}
+
+// Production: DefaultDealIdGenerator (uses clock + GUID)
+// Testing: SequentialDealIdGenerator (D-20250101-00000001, ...)
+// Synthetic: SeededDealIdGenerator (reproducible with same seed)
+```
+
+### Typed Patch Validation (DealPatch + PatchResult)
+
+Explicit validation replacing reflection-based patching:
+
+```csharp
+var result = await service.PatchDealWithResultAsync(dealId, updates);
+// result.Success - true if all valid fields applied
+// result.AppliedFields - list of successfully applied changes
+// result.RejectedFields - invalid fields with rejection reasons
+// result.NormalizationChanges - auto-applied normalizations
+```
+
+### Schema Versioning
+
+Excel files track schema version for forward compatibility:
+
+- Current version: `1.2`
+- Supported versions: `1.0`, `1.1`, `1.2`
+- Auto-migration on load (1.0 → 1.1 → 1.2)
+- Rejects unsupported future versions with clear error
 
 ## Data Flow
 

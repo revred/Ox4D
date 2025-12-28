@@ -315,18 +315,24 @@ This design ensures that migrating to Supabase (or PostgreSQL) requires only imp
 
 ## Roadmap
 
-### Phase 1: Foundation (Complete)
+### Phase 1: Foundation (Complete - v1.2)
 
 - [x] Core domain model with comprehensive deal tracking
 - [x] Excel storage with sheet-per-table architecture
 - [x] Interactive console with Spectre.Console
-- [x] MCP server with full tool coverage
+- [x] MCP server with full tool coverage (14 tools, all versioned v1.0)
 - [x] Synthetic data generation for testing
 - [x] Daily Brief, Hygiene, and Forecast reports
 - [x] Promoter/referral partner support with commission tracking
 - [x] Promoter dashboard with actionable recommendations
 - [x] .NET 10.0 upgrade
 - [x] Bogus-powered realistic UK data generation (Ox4D.Mutate)
+- [x] **Typed patch validation** with explicit field rejection (no silent failures)
+- [x] **Schema versioning** (v1.2) with automatic migration
+- [x] **Deterministic ID generation** for reproducible tests
+- [x] **IClock injection** for testable timestamps
+- [x] **Cross-process Excel locking** with retry logic
+- [x] **415 unit tests** passing
 
 ### Phase 2: Cloud Migration
 - [ ] **Supabase Integration**: Implement `SupabaseDealRepository` for cloud-native storage
@@ -365,15 +371,17 @@ Comprehensive documentation is available in the [`docs/`](docs/) folder:
 | [PRCD.md](docs/PRCD.md) | Product requirements and diagnostics |
 | [VPRC.md](docs/VPRC.md) | Verification guide for 64 user stories |
 | [UseCases.md](docs/UseCases.md) | User personas and detailed use cases |
-| [TestPlan.md](docs/TestPlan.md) | Test specifications (393 tests) |
+| [TestPlan.md](docs/TestPlan.md) | Test specifications (415 tests) |
+| [NextSteps.md](docs/NextSteps.md) | Recent changes and remaining work |
 
 ### Review Documents
 
-| Document | Description |
-|----------|-------------|
-| [DesignReview.md](docs/Review/DesignReview.md) | Architecture and design review findings |
-| [CodeReview.md](docs/Review/CodeReview.md) | File-specific code review notes |
-| [TestReview.md](docs/Review/TestReview.md) | Test coverage review and gap analysis |
+Review documents are archived by date in `docs/Review/YYYY-MM-DD-HHMM/`:
+
+| Folder                                          | Contents                                           |
+|-------------------------------------------------|----------------------------------------------------|
+| [2025-12-27-2330](docs/Review/2025-12-27-2330/) | Initial architecture, code, and test review        |
+| [2025-12-28-0030](docs/Review/2025-12-28-0030/) | Follow-up review (typed patch, schema versioning)  |
 
 ---
 

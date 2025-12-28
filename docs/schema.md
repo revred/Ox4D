@@ -148,12 +148,29 @@ Configuration tables for normalization rules.
 
 Version and audit information.
 
-| Property | Value |
-|----------|-------|
-| Version | 1.1 |
-| LastModified | ISO timestamp |
-| DealCount | Number of deals |
-| GeneratedBy | "Ox4D Sales Pipeline Manager" |
+| Property      | Value                           | Description                |
+|---------------|---------------------------------|----------------------------|
+| Version       | 1.2                             | Current schema version     |
+| LastModified  | ISO timestamp                   | Last save time (UTC)       |
+| DealCount     | Number                          | Count of deals in workbook |
+| GeneratedBy   | "Ox4D Sales Pipeline Manager"   | Application identifier     |
+
+### Schema Versioning
+
+The schema version tracks file format compatibility:
+
+| Version | Changes                                              |
+|---------|------------------------------------------------------|
+| 1.0     | Initial schema (no explicit version in metadata)     |
+| 1.1     | Added Version property to Metadata sheet             |
+| 1.2     | Added typed patch validation, IClock timestamps      |
+
+**Migration Behavior:**
+
+- Files with older supported versions auto-migrate on load
+- Migration chain: 1.0 → 1.1 → 1.2
+- Unsupported future versions are rejected with clear error
+- Supported versions: `1.0`, `1.1`, `1.2`
 
 ---
 
@@ -192,19 +209,32 @@ Applied automatically when deals are loaded or created:
 
 ## File Integrity
 
+### Cross-Process Locking
+
+- Lock file (`filename.xlsx.lock`) with `FileShare.None`
+- Retry logic with exponential backoff (10 attempts)
+- Unique temp file names with GUID suffix to prevent collisions
+
 ### Atomic Save Strategy
-1. Write to temp file (`~$filename.xlsx.tmp.xlsx`)
-2. Validate temp file structure
-3. Create timestamped backup of current file
-4. Replace original with temp file (atomic move)
+
+1. Acquire cross-process lock
+2. Write to temp file (`~$filename.{guid}.tmp.xlsx`)
+3. Validate temp file structure
+4. Create timestamped backup of current file
+5. Replace original with temp file (atomic move)
+6. Release lock (auto-delete on close)
 
 ### Backup Rotation
+
 - Format: `filename_YYYYMMDD_HHMMSS.xlsx.bak`
+- Timestamps use injectable `IClock` for testability
 - Default retention: 5 most recent backups
 - Configurable via `maxBackups` parameter
 
 ### Auto-Recovery
+
 On load failure:
+
 1. Attempt restore from most recent backup
 2. Validate restored file
 3. Throw if no valid backup available

@@ -140,11 +140,13 @@ Referral partners who earn commissions on deals:
 | Diamond | 20% | 100 |
 
 ### Normalization Rules
-- Missing `DealId` → auto-generate (D-XXXXXXXX)
+
+- Missing `DealId` → auto-generate via `IDealIdGenerator` (format: `D-YYYYMMDD-XXXXXXXX`)
 - Missing `Probability` → default from Stage lookup
 - Extract `PostcodeArea` from `Postcode` (e.g., "SW1A 1AA" → "SW")
 - Derive `Region` from `PostcodeArea` using Lookups
 - Generate `MapLink` as Google Maps URL
+- Set `CreatedDate` to today if missing (via `IClock`)
 
 ---
 
@@ -300,11 +302,16 @@ Two implementations available via `ISyntheticDataGenerator` interface:
 
 - [x] Excel-only storage with sheet-per-table design
 - [x] Console app with full CRUD + reports
-- [x] MCP server with all pipeline tools
+- [x] MCP server with all pipeline tools (v1.0, versioned)
 - [x] Promoter/referral partner support with commission tracking
 - [x] Promoter MCP tools (dashboard, deals, actions)
 - [x] Bogus-powered synthetic data generation (Ox4D.Mutate)
-- [x] Unit tests for core logic
+- [x] **Typed patch validation** (DealPatch DTO + PatchResult)
+- [x] **Schema versioning** (v1.2) with migration scaffold
+- [x] **Deterministic ID generation** (IDealIdGenerator abstraction)
+- [x] **IClock injection** throughout for testable timestamps
+- [x] **Cross-process Excel locking** with retry logic
+- [x] Unit tests (415 passing)
 - [x] Project documentation
 - [x] .NET 10.0 upgrade
 
@@ -334,10 +341,63 @@ When migrating to Supabase:
 
 ---
 
-## 11) Guardrails
+## 11) Key Abstractions (V1.2)
+
+### Time Abstraction (IClock)
+
+All date/time operations use injectable `IClock` for testability:
+
+```csharp
+public interface IClock
+{
+    DateTime Now { get; }
+    DateTime UtcNow { get; }
+    DateTime Today { get; }
+}
+// Production: SystemClock.Instance
+// Testing: FixedClock.At(2025, 1, 15)
+```
+
+### ID Generation (IDealIdGenerator)
+
+Deterministic ID generation for reproducible tests:
+
+```csharp
+public interface IDealIdGenerator
+{
+    string Generate();
+}
+// Production: DefaultDealIdGenerator (uses GUID)
+// Testing: SequentialDealIdGenerator, SeededDealIdGenerator
+```
+
+### Typed Patch Validation (DealPatch + PatchResult)
+
+No more silent failures from reflection-based patching:
+
+```csharp
+var result = await service.PatchDealWithResultAsync(dealId, updates);
+// result.AppliedFields - successfully applied changes
+// result.RejectedFields - invalid fields with reasons
+// result.NormalizationChanges - auto-applied normalizations
+```
+
+### Schema Versioning
+
+Excel files track schema version in Metadata sheet:
+
+- `CurrentSchemaVersion = "1.2"`
+- Auto-migration from older versions (1.0 → 1.1 → 1.2)
+- Rejects unsupported future versions with clear error
+
+---
+
+## 12) Guardrails
 
 - Keep MCP tools deterministic (no LLM logic inside)
 - Treat Lookups as user-editable configuration
 - All business logic in Ox4D.Core (not in storage or UI)
 - Maintain repository abstraction for storage swap
 - Use ISyntheticDataGenerator interface for data generation flexibility
+- Use IClock for all date/time operations (testability)
+- Use IDealIdGenerator for ID creation (reproducibility)

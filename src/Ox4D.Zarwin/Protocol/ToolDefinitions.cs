@@ -7,10 +7,13 @@ namespace Ox4D.Zarwin.Protocol;
 /// </summary>
 public static class McpServerInfo
 {
-    public const string Version = "1.1.0";
+    public const string Version = "1.2.0";
     public const string Name = "ox4d-pipeline";
     public const string Description = "Ox4D Sales Pipeline Manager MCP Server";
     public const string ProtocolVersion = "2024-11-05";
+
+    // Tool API versioning
+    public const string ToolApiVersion = "v1";
 
     public static object GetServerInfo() => new
     {
@@ -18,6 +21,7 @@ public static class McpServerInfo
         version = Version,
         description = Description,
         protocolVersion = ProtocolVersion,
+        toolApiVersion = ToolApiVersion,
         capabilities = new
         {
             tools = true,
@@ -74,11 +78,14 @@ public class ToolProperty
 
 public static class PipelineTools
 {
+    private const string ToolVersion = "1.0";
+
     public static List<ToolDefinition> GetAllTools() => new()
     {
         new ToolDefinition
         {
             Name = "pipeline.list_deals",
+            Version = ToolVersion,
             Description = "List all deals in the pipeline, optionally filtered by various criteria",
             InputSchema = new ToolInputSchema
             {
@@ -97,6 +104,7 @@ public static class PipelineTools
         new ToolDefinition
         {
             Name = "pipeline.get_deal",
+            Version = ToolVersion,
             Description = "Get a single deal by its ID",
             InputSchema = new ToolInputSchema
             {
@@ -110,6 +118,7 @@ public static class PipelineTools
         new ToolDefinition
         {
             Name = "pipeline.upsert_deal",
+            Version = ToolVersion,
             Description = "Create or update a deal in the pipeline",
             InputSchema = new ToolInputSchema
             {
@@ -140,6 +149,7 @@ public static class PipelineTools
         new ToolDefinition
         {
             Name = "pipeline.patch_deal",
+            Version = ToolVersion,
             Description = "Update specific fields of an existing deal",
             InputSchema = new ToolInputSchema
             {
@@ -154,6 +164,7 @@ public static class PipelineTools
         new ToolDefinition
         {
             Name = "pipeline.delete_deal",
+            Version = ToolVersion,
             Description = "Delete a deal from the pipeline",
             InputSchema = new ToolInputSchema
             {
@@ -167,12 +178,14 @@ public static class PipelineTools
         new ToolDefinition
         {
             Name = "pipeline.hygiene_report",
+            Version = ToolVersion,
             Description = "Generate a data hygiene report showing deals with missing or inconsistent data",
             InputSchema = new ToolInputSchema()
         },
         new ToolDefinition
         {
             Name = "pipeline.daily_brief",
+            Version = ToolVersion,
             Description = "Generate a daily brief showing actions due today, overdue items, and deals at risk",
             InputSchema = new ToolInputSchema
             {
@@ -185,6 +198,7 @@ public static class PipelineTools
         new ToolDefinition
         {
             Name = "pipeline.forecast_snapshot",
+            Version = ToolVersion,
             Description = "Generate a forecast snapshot with pipeline breakdown by stage, owner, region, and close month",
             InputSchema = new ToolInputSchema
             {
@@ -197,6 +211,7 @@ public static class PipelineTools
         new ToolDefinition
         {
             Name = "pipeline.generate_synthetic",
+            Version = ToolVersion,
             Description = "Generate synthetic demo data for testing",
             InputSchema = new ToolInputSchema
             {
@@ -210,6 +225,7 @@ public static class PipelineTools
         new ToolDefinition
         {
             Name = "pipeline.import_excel",
+            Version = ToolVersion,
             Description = "Import deals from an Excel file",
             InputSchema = new ToolInputSchema
             {
@@ -223,6 +239,7 @@ public static class PipelineTools
         new ToolDefinition
         {
             Name = "pipeline.export_excel",
+            Version = ToolVersion,
             Description = "Export deals to an Excel file",
             InputSchema = new ToolInputSchema
             {
@@ -236,6 +253,7 @@ public static class PipelineTools
         new ToolDefinition
         {
             Name = "pipeline.get_stats",
+            Version = ToolVersion,
             Description = "Get summary statistics for the pipeline",
             InputSchema = new ToolInputSchema()
         },
@@ -247,6 +265,7 @@ public static class PipelineTools
         new ToolDefinition
         {
             Name = "promoter.dashboard",
+            Version = ToolVersion,
             Description = "Get comprehensive dashboard for a promoter including performance metrics, pipeline breakdown, recommended actions, and commission tracking",
             InputSchema = new ToolInputSchema
             {
@@ -264,6 +283,7 @@ public static class PipelineTools
         new ToolDefinition
         {
             Name = "promoter.deals",
+            Version = ToolVersion,
             Description = "Get all deals referred by a promoter with status and health information",
             InputSchema = new ToolInputSchema
             {
@@ -280,6 +300,7 @@ public static class PipelineTools
         new ToolDefinition
         {
             Name = "promoter.actions",
+            Version = ToolVersion,
             Description = "Get recommended actions for a promoter to help their referred deals progress through the pipeline",
             InputSchema = new ToolInputSchema
             {

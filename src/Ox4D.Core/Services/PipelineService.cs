@@ -43,66 +43,160 @@ public class PipelineService
         return normalized;
     }
 
-    public async Task<Deal?> PatchDealAsync(string dealId, Dictionary<string, object?> patch, CancellationToken ct = default)
+    /// <summary>
+    /// Patches a deal using typed validation. Returns detailed result with applied/rejected fields.
+    /// </summary>
+    public async Task<PatchResult> PatchDealWithResultAsync(string dealId, Dictionary<string, object?> patch, CancellationToken ct = default)
     {
         var deal = await _repository.GetByIdAsync(dealId, ct);
-        if (deal == null) return null;
+        if (deal == null)
+            return PatchResult.NotFound(dealId);
 
-        ApplyPatch(deal, patch);
-        var normalized = _normalizer.Normalize(deal);
-        await _repository.UpsertAsync(normalized, ct);
+        // Parse patch with validation
+        var (dealPatch, parseRejected) = DealPatch.FromDictionary(patch);
+
+        // Apply the typed patch and collect changes
+        var applied = ApplyTypedPatch(deal, dealPatch);
+
+        if (applied.Count == 0 && parseRejected.Count > 0)
+        {
+            // Nothing could be applied - return validation failure
+            return PatchResult.ValidationFailed(parseRejected);
+        }
+
+        // Normalize and track changes
+        var result = _normalizer.NormalizeWithTracking(deal);
+        await _repository.UpsertAsync(result.Deal, ct);
         await _repository.SaveChangesAsync(ct);
-        return normalized;
+
+        return PatchResult.Succeeded(result.Deal, applied, parseRejected, result.Changes);
     }
 
-    private void ApplyPatch(Deal deal, Dictionary<string, object?> patch)
+    /// <summary>
+    /// Legacy patch method for backward compatibility. Logs warnings for rejected fields.
+    /// </summary>
+    public async Task<Deal?> PatchDealAsync(string dealId, Dictionary<string, object?> patch, CancellationToken ct = default)
     {
-        foreach (var (key, value) in patch)
+        var result = await PatchDealWithResultAsync(dealId, patch, ct);
+        return result.Deal;
+    }
+
+    private List<AppliedField> ApplyTypedPatch(Deal deal, DealPatch patch)
+    {
+        var applied = new List<AppliedField>();
+
+        // Helper to apply a field if the patch value is non-null
+        void Apply(string name, string? patchValue, Func<string?> getter, Action<string?> setter)
         {
-            var prop = typeof(Deal).GetProperty(key);
-            if (prop == null || !prop.CanWrite) continue;
-
-            try
+            if (patchValue != null)
             {
-                var targetType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
-
-                if (value == null)
-                {
-                    prop.SetValue(deal, null);
-                }
-                else if (targetType == typeof(DateTime))
-                {
-                    prop.SetValue(deal, DealNormalizer.ParseDate(value.ToString()));
-                }
-                else if (targetType == typeof(decimal))
-                {
-                    prop.SetValue(deal, DealNormalizer.ParseAmount(value.ToString()));
-                }
-                else if (targetType == typeof(int))
-                {
-                    prop.SetValue(deal, int.TryParse(value.ToString(), out var i) ? i : 0);
-                }
-                else if (targetType == typeof(DealStage))
-                {
-                    prop.SetValue(deal, DealStageExtensions.ParseStage(value.ToString()));
-                }
-                else if (targetType == typeof(List<string>))
-                {
-                    if (value is IEnumerable<string> list)
-                        prop.SetValue(deal, list.ToList());
-                    else if (value is string str)
-                        prop.SetValue(deal, str.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim()).ToList());
-                }
-                else
-                {
-                    prop.SetValue(deal, Convert.ChangeType(value, targetType));
-                }
-            }
-            catch
-            {
-                // Skip invalid patches silently
+                var oldValue = getter();
+                setter(patchValue);
+                applied.Add(new AppliedField(name, oldValue, patchValue));
             }
         }
+
+        void ApplyInt(string name, int? patchValue, Func<int> getter, Action<int> setter)
+        {
+            if (patchValue.HasValue)
+            {
+                var oldValue = getter().ToString();
+                setter(patchValue.Value);
+                applied.Add(new AppliedField(name, oldValue, patchValue.Value.ToString()));
+            }
+        }
+
+        void ApplyDecimal(string name, decimal? patchValue, Func<decimal?> getter, Action<decimal?> setter)
+        {
+            if (patchValue.HasValue)
+            {
+                var oldValue = getter()?.ToString();
+                setter(patchValue.Value);
+                applied.Add(new AppliedField(name, oldValue, patchValue.Value.ToString()));
+            }
+        }
+
+        void ApplyDate(string name, DateTime? patchValue, Func<DateTime?> getter, Action<DateTime?> setter)
+        {
+            if (patchValue.HasValue)
+            {
+                var oldValue = getter()?.ToString("yyyy-MM-dd");
+                setter(patchValue.Value);
+                applied.Add(new AppliedField(name, oldValue, patchValue.Value.ToString("yyyy-MM-dd")));
+            }
+        }
+
+        void ApplyBool(string name, bool? patchValue, Func<bool> getter, Action<bool> setter)
+        {
+            if (patchValue.HasValue)
+            {
+                var oldValue = getter().ToString();
+                setter(patchValue.Value);
+                applied.Add(new AppliedField(name, oldValue, patchValue.Value.ToString()));
+            }
+        }
+
+        // Identity
+        Apply("OrderNo", patch.OrderNo, () => deal.OrderNo, v => deal.OrderNo = v);
+        Apply("UserId", patch.UserId, () => deal.UserId, v => deal.UserId = v);
+
+        // Account & Contact
+        Apply("AccountName", patch.AccountName, () => deal.AccountName, v => deal.AccountName = v ?? string.Empty);
+        Apply("ContactName", patch.ContactName, () => deal.ContactName, v => deal.ContactName = v);
+        Apply("Email", patch.Email, () => deal.Email, v => deal.Email = v);
+        Apply("Phone", patch.Phone, () => deal.Phone, v => deal.Phone = v);
+
+        // Location
+        Apply("Postcode", patch.Postcode, () => deal.Postcode, v => deal.Postcode = v);
+        Apply("InstallationLocation", patch.InstallationLocation, () => deal.InstallationLocation, v => deal.InstallationLocation = v);
+
+        // Deal Details
+        Apply("LeadSource", patch.LeadSource, () => deal.LeadSource, v => deal.LeadSource = v);
+        Apply("ProductLine", patch.ProductLine, () => deal.ProductLine, v => deal.ProductLine = v);
+        Apply("DealName", patch.DealName, () => deal.DealName, v => deal.DealName = v ?? string.Empty);
+
+        // Stage & Value
+        if (patch.Stage != null)
+        {
+            var oldStage = deal.Stage.ToString();
+            deal.Stage = DealStageExtensions.ParseStage(patch.Stage);
+            applied.Add(new AppliedField("Stage", oldStage, deal.Stage.ToString()));
+        }
+        ApplyInt("Probability", patch.Probability, () => deal.Probability, v => deal.Probability = v);
+        ApplyDecimal("AmountGBP", patch.AmountGBP, () => deal.AmountGBP, v => deal.AmountGBP = v);
+
+        // Ownership & Dates
+        Apply("Owner", patch.Owner, () => deal.Owner, v => deal.Owner = v);
+        ApplyDate("CreatedDate", patch.CreatedDate, () => deal.CreatedDate, v => deal.CreatedDate = v);
+        ApplyDate("LastContactedDate", patch.LastContactedDate, () => deal.LastContactedDate, v => deal.LastContactedDate = v);
+
+        // Next Steps
+        Apply("NextStep", patch.NextStep, () => deal.NextStep, v => deal.NextStep = v);
+        ApplyDate("NextStepDueDate", patch.NextStepDueDate, () => deal.NextStepDueDate, v => deal.NextStepDueDate = v);
+        ApplyDate("CloseDate", patch.CloseDate, () => deal.CloseDate, v => deal.CloseDate = v);
+
+        // Service
+        Apply("ServicePlan", patch.ServicePlan, () => deal.ServicePlan, v => deal.ServicePlan = v);
+        ApplyDate("LastServiceDate", patch.LastServiceDate, () => deal.LastServiceDate, v => deal.LastServiceDate = v);
+        ApplyDate("NextServiceDueDate", patch.NextServiceDueDate, () => deal.NextServiceDueDate, v => deal.NextServiceDueDate = v);
+
+        // Metadata
+        Apply("Comments", patch.Comments, () => deal.Comments, v => deal.Comments = v);
+        if (patch.Tags != null)
+        {
+            var oldTags = string.Join(",", deal.Tags);
+            deal.Tags = patch.Tags;
+            applied.Add(new AppliedField("Tags", oldTags, string.Join(",", patch.Tags)));
+        }
+
+        // Promoter/Referral
+        Apply("PromoterId", patch.PromoterId, () => deal.PromoterId, v => deal.PromoterId = v);
+        Apply("PromoCode", patch.PromoCode, () => deal.PromoCode, v => deal.PromoCode = v);
+        ApplyDecimal("PromoterCommission", patch.PromoterCommission, () => deal.PromoterCommission, v => deal.PromoterCommission = v);
+        ApplyBool("CommissionPaid", patch.CommissionPaid, () => deal.CommissionPaid, v => deal.CommissionPaid = v);
+        ApplyDate("CommissionPaidDate", patch.CommissionPaidDate, () => deal.CommissionPaidDate, v => deal.CommissionPaidDate = v);
+
+        return applied;
     }
 
     public async Task DeleteDealAsync(string dealId, CancellationToken ct = default)

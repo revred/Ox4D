@@ -28,10 +28,17 @@ public class NormalizationResult
 public class DealNormalizer
 {
     private readonly LookupTables _lookups;
+    private readonly IDealIdGenerator _idGenerator;
+    private readonly IClock _clock;
 
     public DealNormalizer(LookupTables lookups)
+        : this(lookups, new DefaultDealIdGenerator(), SystemClock.Instance) { }
+
+    public DealNormalizer(LookupTables lookups, IDealIdGenerator idGenerator, IClock? clock = null)
     {
         _lookups = lookups;
+        _idGenerator = idGenerator;
+        _clock = clock ?? SystemClock.Instance;
     }
 
     /// <summary>
@@ -53,7 +60,7 @@ public class DealNormalizer
         // Generate DealId if missing
         if (string.IsNullOrEmpty(normalized.DealId))
         {
-            var newId = GenerateDealId();
+            var newId = _idGenerator.Generate();
             changes.Add(new NormalizationChange(
                 nameof(Deal.DealId),
                 null,
@@ -123,7 +130,7 @@ public class DealNormalizer
         // Set created date if missing
         if (!normalized.CreatedDate.HasValue)
         {
-            var newDate = DateTime.Today;
+            var newDate = _clock.Today;
             changes.Add(new NormalizationChange(
                 nameof(Deal.CreatedDate),
                 null,

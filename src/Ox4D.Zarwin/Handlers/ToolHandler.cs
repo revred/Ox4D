@@ -174,11 +174,41 @@ public class ToolHandler
             };
         }
 
-        var result = await _pipelineService.PatchDealAsync(dealId, patch);
-        if (result == null)
-            throw new InvalidOperationException($"Deal not found: {dealId}");
+        var result = await _pipelineService.PatchDealWithResultAsync(dealId, patch);
 
-        return new { success = true, deal = DealToDto(result) };
+        if (!result.Success && result.Deal == null)
+        {
+            // Complete failure - either not found or all fields rejected
+            throw new InvalidOperationException(result.Error ?? $"Patch failed for deal: {dealId}");
+        }
+
+        return new
+        {
+            success = result.Success,
+            deal = result.Deal != null ? DealToDto(result.Deal) : null,
+            appliedFields = result.AppliedFields.Select(f => new
+            {
+                field = f.FieldName,
+                oldValue = f.OldValue,
+                newValue = f.NewValue
+            }),
+            rejectedFields = result.RejectedFields.Select(f => new
+            {
+                field = f.FieldName,
+                attemptedValue = f.AttemptedValue,
+                reason = f.Reason
+            }),
+            normalizationChanges = result.NormalizationChanges.Select(c => new
+            {
+                field = c.FieldName,
+                oldValue = c.OldValue,
+                newValue = c.NewValue,
+                reason = c.Reason
+            }),
+            warning = result.RejectedFields.Count > 0
+                ? $"{result.RejectedFields.Count} field(s) were rejected"
+                : null
+        };
     }
 
     private async Task<object> HandleDeleteDeal(JsonElement? parameters)

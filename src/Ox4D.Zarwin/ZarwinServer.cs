@@ -121,17 +121,12 @@ public class ZarwinServer
     {
         return new
         {
-            protocolVersion = "2024-11-05",
+            protocolVersion = McpServerInfo.ProtocolVersion,
             capabilities = new
             {
                 tools = new { }
             },
-            serverInfo = new
-            {
-                name = "Ox4D.Zarwin",
-                version = "1.0.0",
-                description = "Sales Pipeline Manager MCP Server"
-            }
+            serverInfo = McpServerInfo.GetServerInfo()
         };
     }
 

@@ -46,6 +46,8 @@ public class ExcelValidationResult
     public bool HasDealsSheet { get; set; }
     public bool HasLookupsSheet { get; set; }
     public bool HasMetadataSheet { get; set; }
+    public string? SchemaVersion { get; set; }
+    public bool RequiresMigration { get; set; }
 }
 
 /// <summary>
@@ -62,16 +64,23 @@ public class ExcelDealRepository : IDealRepository
     private readonly string _filePath;
     private readonly LookupTables _lookups;
     private readonly DealNormalizer _normalizer;
+    private readonly IClock _clock;
     private readonly object _fileLock = new();
     private readonly int _maxBackups;
     private List<Deal> _deals = new();
     private bool _loaded = false;
     private bool _isDirty = false;
+    private string? _loadedSchemaVersion;
 
     public const string DealsSheetName = "Deals";
     public const string LookupsSheetName = "Lookups";
     public const string MetadataSheetName = "Metadata";
     public const string BackupExtension = ".bak";
+    public const string LockFileExtension = ".lock";
+
+    // Schema versioning
+    public const string CurrentSchemaVersion = "1.2";
+    public static readonly string[] SupportedSchemaVersions = { "1.0", "1.1", "1.2" };
 
     // Required columns for validation
     private static readonly string[] RequiredDealColumns = new[]
@@ -80,12 +89,21 @@ public class ExcelDealRepository : IDealRepository
     };
 
     public ExcelDealRepository(string filePath, LookupTables lookups, int maxBackups = 5)
+        : this(filePath, lookups, SystemClock.Instance, maxBackups) { }
+
+    public ExcelDealRepository(string filePath, LookupTables lookups, IClock clock, int maxBackups = 5)
     {
         _filePath = filePath;
         _lookups = lookups;
+        _clock = clock;
         _normalizer = new DealNormalizer(lookups);
         _maxBackups = maxBackups;
     }
+
+    /// <summary>
+    /// Gets the schema version of the currently loaded file
+    /// </summary>
+    public string? LoadedSchemaVersion => _loadedSchemaVersion;
 
     /// <summary>
     /// Reloads data from the Excel file, discarding any unsaved changes.
@@ -111,6 +129,7 @@ public class ExcelDealRepository : IDealRepository
         if (!File.Exists(_filePath))
         {
             _deals = new List<Deal>();
+            _loadedSchemaVersion = CurrentSchemaVersion;
             _loaded = true;
             return Task.CompletedTask;
         }
@@ -138,7 +157,26 @@ public class ExcelDealRepository : IDealRepository
                 }
             }
 
+            // Store schema version from validation
+            _loadedSchemaVersion = validation.SchemaVersion ?? "1.0";
+
+            // Check for unsupported future versions
+            if (!string.IsNullOrEmpty(validation.SchemaVersion) &&
+                !SupportedSchemaVersions.Contains(validation.SchemaVersion))
+            {
+                throw new InvalidOperationException(
+                    $"Unsupported schema version: {validation.SchemaVersion}. " +
+                    $"This version of Ox4D supports versions: {string.Join(", ", SupportedSchemaVersions)}. " +
+                    $"Please update Ox4D to open this file.");
+            }
+
             using var workbook = new XLWorkbook(_filePath);
+
+            // Apply migrations if needed
+            if (validation.RequiresMigration)
+            {
+                MigrateWorkbook(workbook, validation.SchemaVersion ?? "1.0");
+            }
 
             // Load deals from Deals sheet
             var dealsSheet = workbook.Worksheets.FirstOrDefault(ws =>
@@ -151,8 +189,94 @@ public class ExcelDealRepository : IDealRepository
             }
 
             _loaded = true;
+
+            // If migration was needed, save the updated schema
+            if (validation.RequiresMigration)
+            {
+                _isDirty = true;
+            }
         }
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Migrates workbook from an older schema version to current
+    /// </summary>
+    private void MigrateWorkbook(XLWorkbook workbook, string fromVersion)
+    {
+        // Migration chain: 1.0 → 1.1 → 1.2
+        if (fromVersion == "1.0")
+        {
+            MigrateFrom_1_0_To_1_1(workbook);
+            fromVersion = "1.1";
+        }
+
+        if (fromVersion == "1.1")
+        {
+            MigrateFrom_1_1_To_1_2(workbook);
+        }
+
+        _loadedSchemaVersion = CurrentSchemaVersion;
+    }
+
+    /// <summary>
+    /// Migration from schema 1.0 to 1.1
+    /// 1.0 had no explicit schema version in metadata
+    /// </summary>
+    private void MigrateFrom_1_0_To_1_1(XLWorkbook workbook)
+    {
+        // Ensure Metadata sheet exists with Version property
+        var metadataSheet = workbook.Worksheets.FirstOrDefault(ws =>
+            ws.Name.Equals(MetadataSheetName, StringComparison.OrdinalIgnoreCase));
+
+        if (metadataSheet == null)
+        {
+            metadataSheet = workbook.Worksheets.Add(MetadataSheetName);
+            metadataSheet.Cell(1, 1).Value = "Property";
+            metadataSheet.Cell(1, 2).Value = "Value";
+        }
+
+        // Add version row if missing
+        var lastRow = metadataSheet.LastRowUsed()?.RowNumber() ?? 1;
+        bool hasVersion = false;
+        for (int row = 2; row <= lastRow; row++)
+        {
+            if (metadataSheet.Cell(row, 1).GetString().Equals("Version", StringComparison.OrdinalIgnoreCase))
+            {
+                hasVersion = true;
+                break;
+            }
+        }
+
+        if (!hasVersion)
+        {
+            var newRow = lastRow + 1;
+            metadataSheet.Cell(newRow, 1).Value = "Version";
+            metadataSheet.Cell(newRow, 2).Value = "1.1";
+        }
+    }
+
+    /// <summary>
+    /// Migration from schema 1.1 to 1.2
+    /// 1.2 adds SchemaVersion as a distinct property from Version
+    /// </summary>
+    private void MigrateFrom_1_1_To_1_2(XLWorkbook workbook)
+    {
+        var metadataSheet = workbook.Worksheets.FirstOrDefault(ws =>
+            ws.Name.Equals(MetadataSheetName, StringComparison.OrdinalIgnoreCase));
+
+        if (metadataSheet == null) return;
+
+        // Update version to 1.2
+        var lastRow = metadataSheet.LastRowUsed()?.RowNumber() ?? 1;
+        for (int row = 2; row <= lastRow; row++)
+        {
+            if (metadataSheet.Cell(row, 1).GetString().Equals("Version", StringComparison.OrdinalIgnoreCase))
+            {
+                metadataSheet.Cell(row, 2).Value = "1.2";
+                break;
+            }
+        }
     }
 
     /// <summary>
@@ -299,59 +423,94 @@ public class ExcelDealRepository : IDealRepository
                 Directory.CreateDirectory(dir);
             }
 
-            // Step 1: Write to temp file (must have .xlsx extension for ClosedXML)
-            var tempFile = Path.Combine(
-                Path.GetDirectoryName(_filePath) ?? ".",
-                $"~${Path.GetFileName(_filePath)}.tmp.xlsx");
-            try
+            // Cross-process lock using lock file
+            var lockFilePath = _filePath + LockFileExtension;
+            using (var lockFile = AcquireCrossProcessLock(lockFilePath))
             {
-                using (var workbook = new XLWorkbook())
+                // Step 1: Write to temp file with unique name (avoid collisions between processes)
+                var uniqueId = Guid.NewGuid().ToString("N")[..8];
+                var tempFile = Path.Combine(
+                    Path.GetDirectoryName(_filePath) ?? ".",
+                    $"~${Path.GetFileName(_filePath)}.{uniqueId}.tmp.xlsx");
+                try
                 {
-                    // Create Deals sheet (main table)
-                    var dealsSheet = workbook.Worksheets.Add(DealsSheetName);
-                    WriteDealsSheet(dealsSheet, _deals);
+                    using (var workbook = new XLWorkbook())
+                    {
+                        // Create Deals sheet (main table)
+                        var dealsSheet = workbook.Worksheets.Add(DealsSheetName);
+                        WriteDealsSheet(dealsSheet, _deals);
 
-                    // Create Lookups sheet (configuration table)
-                    var lookupsSheet = workbook.Worksheets.Add(LookupsSheetName);
-                    WriteLookupsSheet(lookupsSheet, _lookups);
+                        // Create Lookups sheet (configuration table)
+                        var lookupsSheet = workbook.Worksheets.Add(LookupsSheetName);
+                        WriteLookupsSheet(lookupsSheet, _lookups);
 
-                    // Create Metadata sheet (version/audit table)
-                    var metadataSheet = workbook.Worksheets.Add(MetadataSheetName);
-                    WriteMetadataSheet(metadataSheet);
+                        // Create Metadata sheet (version/audit table)
+                        var metadataSheet = workbook.Worksheets.Add(MetadataSheetName);
+                        WriteMetadataSheet(metadataSheet);
 
-                    workbook.SaveAs(tempFile);
+                        workbook.SaveAs(tempFile);
+                    }
+
+                    // Step 2: Validate temp file integrity
+                    var validation = ValidateExcelFile(tempFile);
+                    if (!validation.IsValid)
+                    {
+                        throw new InvalidOperationException(
+                            $"Validation failed for temp file: {string.Join("; ", validation.Errors)}");
+                    }
+
+                    // Step 3: Create backup of existing file
+                    if (File.Exists(_filePath))
+                    {
+                        CreateBackup();
+                    }
+
+                    // Step 4: Replace original with temp file (atomic on most filesystems)
+                    File.Move(tempFile, _filePath, overwrite: true);
+                    _isDirty = false;
                 }
-
-                // Step 2: Validate temp file integrity
-                var validation = ValidateExcelFile(tempFile);
-                if (!validation.IsValid)
+                catch
                 {
-                    throw new InvalidOperationException(
-                        $"Validation failed for temp file: {string.Join("; ", validation.Errors)}");
+                    // Clean up temp file on failure
+                    if (File.Exists(tempFile))
+                    {
+                        try { File.Delete(tempFile); } catch { /* ignore cleanup errors */ }
+                    }
+                    throw;
                 }
-
-                // Step 3: Create backup of existing file
-                if (File.Exists(_filePath))
-                {
-                    CreateBackup();
-                }
-
-                // Step 4: Replace original with temp file (atomic on most filesystems)
-                File.Move(tempFile, _filePath, overwrite: true);
-                _isDirty = false;
-            }
-            catch
-            {
-                // Clean up temp file on failure
-                if (File.Exists(tempFile))
-                {
-                    try { File.Delete(tempFile); } catch { /* ignore cleanup errors */ }
-                }
-                throw;
             }
         }
 
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Acquires a cross-process lock using a lock file with retry logic
+    /// </summary>
+    private FileStream AcquireCrossProcessLock(string lockFilePath, int maxRetries = 10, int retryDelayMs = 100)
+    {
+        for (int attempt = 0; attempt < maxRetries; attempt++)
+        {
+            try
+            {
+                // FileShare.None ensures exclusive access across processes
+                return new FileStream(
+                    lockFilePath,
+                    FileMode.OpenOrCreate,
+                    FileAccess.ReadWrite,
+                    FileShare.None,
+                    bufferSize: 1,
+                    FileOptions.DeleteOnClose);
+            }
+            catch (IOException) when (attempt < maxRetries - 1)
+            {
+                // Another process has the lock - wait and retry
+                Thread.Sleep(retryDelayMs * (attempt + 1)); // Exponential backoff
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"Could not acquire file lock after {maxRetries} attempts. Another process may be writing to the file.");
     }
 
     /// <summary>
@@ -424,6 +583,38 @@ public class ExcelDealRepository : IDealRepository
             if (!result.HasMetadataSheet)
             {
                 result.Warnings.Add($"Missing optional sheet: {MetadataSheetName}");
+                result.SchemaVersion = "1.0"; // No metadata = legacy 1.0 file
+                result.RequiresMigration = true;
+            }
+            else
+            {
+                // Read schema version from Metadata sheet
+                var metadataSheet = workbook.Worksheets.First(ws =>
+                    ws.Name.Equals(MetadataSheetName, StringComparison.OrdinalIgnoreCase));
+
+                var lastRow = metadataSheet.LastRowUsed()?.RowNumber() ?? 1;
+                for (int row = 2; row <= lastRow; row++)
+                {
+                    var propName = metadataSheet.Cell(row, 1).GetString().Trim();
+                    if (propName.Equals("Version", StringComparison.OrdinalIgnoreCase))
+                    {
+                        result.SchemaVersion = metadataSheet.Cell(row, 2).GetString().Trim();
+                        break;
+                    }
+                }
+
+                // Default to 1.0 if no version found
+                if (string.IsNullOrEmpty(result.SchemaVersion))
+                {
+                    result.SchemaVersion = "1.0";
+                    result.RequiresMigration = true;
+                }
+                else if (result.SchemaVersion != CurrentSchemaVersion &&
+                         SupportedSchemaVersions.Contains(result.SchemaVersion))
+                {
+                    // Older supported version - needs migration
+                    result.RequiresMigration = true;
+                }
             }
 
             result.IsValid = result.Errors.Count == 0;
@@ -447,8 +638,8 @@ public class ExcelDealRepository : IDealRepository
         var fileName = Path.GetFileNameWithoutExtension(_filePath);
         var ext = Path.GetExtension(_filePath);
 
-        // Create backup with timestamp
-        var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+        // Create backup with timestamp (using injected clock for testability)
+        var timestamp = _clock.Now.ToString("yyyyMMdd_HHmmss");
         var backupPath = Path.Combine(dir, $"{fileName}_{timestamp}{ext}{BackupExtension}");
         File.Copy(_filePath, backupPath, overwrite: true);
 
@@ -636,9 +827,9 @@ public class ExcelDealRepository : IDealRepository
         sheet.Cell(1, 2).Style.Fill.BackgroundColor = XLColor.LightSteelBlue;
 
         sheet.Cell(2, 1).Value = "Version";
-        sheet.Cell(2, 2).Value = "1.1";
+        sheet.Cell(2, 2).Value = CurrentSchemaVersion;
         sheet.Cell(3, 1).Value = "LastModified";
-        sheet.Cell(3, 2).Value = DateTime.UtcNow;
+        sheet.Cell(3, 2).Value = _clock.UtcNow;
         sheet.Cell(4, 1).Value = "DealCount";
         sheet.Cell(4, 2).Value = _deals.Count;
         sheet.Cell(5, 1).Value = "GeneratedBy";
